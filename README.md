@@ -1,4 +1,4 @@
-# MLOps Main Server (82)
+# MLOps Main Server
 
 Intellivix MLOps 메인 서버입니다. **82(ai-server)** 에 ClearML, Data Studio, (선택) Grafana 모니터링을 운영합니다.
 
