@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Data Studio용 Dataset 마운트 — 설정은 mount/config/dataset-mount.env 만 수정
+# Data Studio용 Dataset 마운트 — 설정은 /opt/clearml/.env
 #
 #   mount   : 학습 서버 NFS → LOCAL_MOUNT_PATH (실패해도 exit 0, MLOps 진행 가능)
 #   status  : 마운트 상태 확인
@@ -7,7 +7,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MOUNT_ENV="${MOUNT_ENV:-${ROOT}/mount/config/dataset-mount.env}"
+ENV_FILE="${CLEARML_ENV_FILE:-${ROOT}/.env}"
 
 RED=$'\033[0;31m'; GRN=$'\033[0;32m'; YEL=$'\033[1;33m'; BLU=$'\033[0;34m'; NC=$'\033[0m'
 info() { echo -e "${BLU}▶ $*${NC}"; }
@@ -16,11 +16,14 @@ warn() { echo -e "  ${YEL}!${NC} $*"; }
 err()  { echo -e "  ${RED}✗${NC} $*" >&2; }
 
 load_config() {
-    [ -f "$MOUNT_ENV" ] || { err "설정 파일 없음: ${MOUNT_ENV}"; return 1; }
+    if [ ! -f "$ENV_FILE" ]; then
+        err "설정 없음: ${ENV_FILE} — cp .env.example .env"
+        return 1
+    fi
     # shellcheck disable=SC1090
-    . "$MOUNT_ENV"
-    TRAINING_SERVER_IP="${TRAINING_SERVER_IP:?dataset-mount.env 에 TRAINING_SERVER_IP 필요}"
-    TRAINING_DATASET_PATH="${TRAINING_DATASET_PATH:?dataset-mount.env 에 TRAINING_DATASET_PATH 필요}"
+    . "$ENV_FILE"
+    TRAINING_SERVER_IP="${TRAINING_SERVER_IP:? .env 에 TRAINING_SERVER_IP 필요}"
+    TRAINING_DATASET_PATH="${TRAINING_DATASET_PATH:? .env 에 TRAINING_DATASET_PATH 필요}"
     # HOST_DATASET_PATH: ClearML 서버 디스크 경로 (compose → 컨테이너 /data/datasets)
     HOST_DATASET_PATH="${HOST_DATASET_PATH:-${LOCAL_MOUNT_PATH:-/opt/clearml/data/datasets}}"
     LOCAL_MOUNT_PATH="${HOST_DATASET_PATH}"
@@ -34,12 +37,10 @@ is_mounted() {
 
 sync_compose_env() {
     local set_env="${ROOT}/packaging/lib/set_env.py"
-    local secrets_env="${ROOT}/secrets/.env"
-    mkdir -p "${ROOT}/secrets" "${LOCAL_MOUNT_PATH}"
-    chmod 700 "${ROOT}/secrets" 2>/dev/null || true
-    if [ -f "$set_env" ]; then
-        python3 "$set_env" "$secrets_env" "DATASET_EXPORT_PATH=${LOCAL_MOUNT_PATH}" >/dev/null 2>&1 || true
-        chmod 600 "$secrets_env" 2>/dev/null || true
+    mkdir -p "${LOCAL_MOUNT_PATH}"
+    if [ -f "$set_env" ] && [ -f "$ENV_FILE" ]; then
+        python3 "$set_env" "$ENV_FILE" "DATASET_EXPORT_PATH=${LOCAL_MOUNT_PATH}" >/dev/null 2>&1 || true
+        chmod 600 "$ENV_FILE" 2>/dev/null || true
     fi
 }
 
@@ -72,7 +73,7 @@ cmd_mount() {
     load_config || return 0
 
     info "Dataset mount (Data Studio)"
-    echo "  Config:     ${MOUNT_ENV}"
+    echo "  Config:     ${ENV_FILE}"
     echo "  Source:     ${NFS_SOURCE}"
     echo "  Mount point:${LOCAL_MOUNT_PATH}"
 
@@ -120,7 +121,7 @@ cmd_status() {
     echo "  Config:      ${MOUNT_ENV}"
     echo "  Source:      ${NFS_SOURCE}"
     echo "  Mount point: ${LOCAL_MOUNT_PATH}"
-    echo "  Compose env: DATASET_EXPORT_PATH → secrets/.env"
+    echo "  Compose env: DATASET_EXPORT_PATH → .env"
 
     if [ -d "$LOCAL_MOUNT_PATH" ]; then
         if is_mounted; then

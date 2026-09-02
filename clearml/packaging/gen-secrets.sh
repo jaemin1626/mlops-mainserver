@@ -13,7 +13,7 @@
 #      헤더와 사이드바가 빠진 껍데기 화면이 남는다.
 #   2. 공개된 키를 아는 사람은 누구나 관리자 토큰을 위조할 수 있다.
 #
-#   이 스크립트는 /opt/clearml/secrets/.env 에 서버 고유 키를 넣는다. compose.sh 가
+#   이 스크립트는 /opt/clearml/.env 에 서버 고유 키를 넣는다. compose.sh 가
 #   apiserver 와 fileserver 에 넘긴다. 키는 번들에 포함되지 않으므로 서버마다 달라진다.
 #
 #   사용법:
@@ -25,7 +25,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLEARML_DIR="${CLEARML_DIR:-/opt/clearml}"
-ENV_FILE="${CLEARML_ENV_FILE:-${CLEARML_DIR}/secrets/.env}"
+ENV_FILE="${CLEARML_ENV_FILE:-${CLEARML_DIR}/.env}"
 
 # ClearML 문서가 권장하는 길이는 50~60자
 SECRET_LEN=56
@@ -96,7 +96,6 @@ fi
 [ -f "$ENV_FILE" ] && cp -a "$ENV_FILE" "${ENV_FILE}.bak-$(date +%Y%m%d-%H%M%S)"
 python3 "${SCRIPT_DIR}/lib/set_env.py" "$ENV_FILE" "${UPDATES[@]}" >/dev/null
 mkdir -p "$(dirname "$ENV_FILE")"
-chmod 700 "$(dirname "$ENV_FILE")"
 chmod 600 "$ENV_FILE"
 ok "${ENV_FILE} (권한 600)"
 

@@ -4,7 +4,7 @@
 #
 #   기본값으로는 누구나 아무 이름으로 가입·로그인 가능하다.
 #   이 스크립트는 /opt/clearml/config/apiserver.conf 를 만들어
-#   secrets/.env 에 지정한 계정만 로그인되게 한다.
+#   .env 에 지정한 계정만 로그인되게 한다.
 #
 #   사용법:
 #     ./gen-auth.sh              # .env 에 계정 없으면 admin + 랜덤 비밀번호 생성
@@ -18,7 +18,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLEARML_DIR="${CLEARML_DIR:-/opt/clearml}"
-ENV_FILE="${CLEARML_ENV_FILE:-${CLEARML_DIR}/secrets/.env}"
+ENV_FILE="${CLEARML_ENV_FILE:-${CLEARML_DIR}/.env}"
 CONF_DIR="${CLEARML_DIR}/config"
 CONF_FILE="${CONF_DIR}/apiserver.conf"
 
@@ -96,7 +96,7 @@ else
         "CLEARML_LOGIN_PASSWORD=${PASS}" >/dev/null
     chmod 700 "$(dirname "$ENV_FILE")"
     chmod 600 "$ENV_FILE"
-    ok "secrets/.env 에 로그인 계정 저장 (권한 600)"
+    ok ".env 에 로그인 계정 저장 (권한 600)"
 fi
 
 mkdir -p "$CONF_DIR"
@@ -109,7 +109,7 @@ def hocon_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 content = f"""# ClearML fixed users — packaging/gen-auth.sh 로 생성·갱신
-# 비밀번호 원본: /opt/clearml/secrets/.env (CLEARML_LOGIN_PASSWORD)
+# 비밀번호 원본: /opt/clearml/.env (CLEARML_LOGIN_PASSWORD)
 
 auth {{
     fixed_users {{
@@ -140,5 +140,5 @@ echo
 echo "  로그인 계정"
 echo "    사용자: ${USER}"
 echo "    비밀번호: ${PASS}"
-warn "위 비밀번호는 secrets/.env 에도 저장됩니다. 안전한 곳에 보관하세요."
+warn "위 비밀번호는 .env 에도 저장됩니다. 안전한 곳에 보관하세요."
 warn "기존에 임의 이름으로 만든 계정은 UI(Administration → Users)에서 정리할 수 있습니다."

@@ -1,4 +1,7 @@
 # secrets & runtime data — never commit
+.env
+.env.*
+!.env.example
 secrets/
 config/apiserver.conf
 agent/

@@ -4,13 +4,12 @@
 #   start.sh 하나로 아래를 순서대로 실행합니다 (마운트 실패해도 MLOps 는 기동):
 #     1. nfs-common 설치 (없으면)
 #     2. Dataset NFS 마운트 (dataset-mount.env)
-#     3. secrets/.env 생성·갱신
+#     3. .env 생성·갱신
 #     4. docker compose up
 #     5. data-studio 재기동 (마운트 경로 반영)
 #
 #   사용자 설정:
-#     mount/config/dataset-mount.env  ← 학습 서버 IP, Dataset 경로
-#     servers.conf                    ← ClearML 주소
+#     .env  ← 모든 설정 (cp .env.example .env)
 #
 #   사용:
 #     bash /opt/clearml/start.sh
@@ -53,20 +52,22 @@ else
     bash "${ROOT}/mount/scripts/mount_dataset.sh" mount || true
 fi
 
-# ── 2/4 secrets / servers.conf ───────────────────────────────────────────
-step "2/4 환경 설정 (secrets/.env)"
-mkdir -p "${ROOT}/secrets"
-chmod 700 "${ROOT}/secrets" 2>/dev/null || run_root chmod 700 "${ROOT}/secrets" || true
+# ── 2/4 .env (secrets · 주소 · 파생 URL) ─────────────────────────────────
+step "2/4 환경 설정 (.env)"
+if [ ! -f "${ROOT}/.env" ]; then
+    if [ -f "${ROOT}/.env.example" ]; then
+        cp "${ROOT}/.env.example" "${ROOT}/.env"
+        chmod 600 "${ROOT}/.env"
+    fi
+    bash "${ROOT}/packaging/migrate-env.sh" 2>/dev/null || true
+fi
 
-if [ ! -f "${ROOT}/secrets/.env" ] || ! grep -qE '^CLEARML_TOKEN_SECRET=.' "${ROOT}/secrets/.env" 2>/dev/null; then
+if [ ! -f "${ROOT}/.env" ] || ! grep -qE '^CLEARML_TOKEN_SECRET=.' "${ROOT}/.env" 2>/dev/null; then
     bash "${ROOT}/packaging/gen-secrets.sh"
 fi
-# .env(CLEARML_LOGIN_*) → config/apiserver.conf 동기화 (ClearML은 .env를 직접 읽지 않음)
 bash "${ROOT}/packaging/gen-auth.sh" >/dev/null
-if [ -f "${ROOT}/packaging/apply-servers.sh" ]; then
-    bash "${ROOT}/packaging/apply-servers.sh"
-fi
-ok "secrets/.env 준비"
+bash "${ROOT}/packaging/apply-env.sh"
+ok ".env 준비"
 
 # ── 3/4 Docker Compose ───────────────────────────────────────────────────
 step "3/4 MLOps docker compose up"
@@ -80,8 +81,8 @@ step "4/4 Data Studio 재기동 (Dataset bind mount 반영)"
 ok "data-studio ready"
 
 # ── 결과 요약 ────────────────────────────────────────────────────────────
-HOST_IP="$(grep '^CLEARML_HOST_IP=' "${ROOT}/secrets/.env" 2>/dev/null | cut -d= -f2- || echo '?')"
-DATASET_PATH="$(grep '^DATASET_EXPORT_PATH=' "${ROOT}/secrets/.env" 2>/dev/null | cut -d= -f2- || echo '?')"
+HOST_IP="$(grep '^CLEARML_HOST_IP=' "${ROOT}/.env" 2>/dev/null | cut -d= -f2- || echo '?')"
+DATASET_PATH="$(grep '^DATASET_EXPORT_PATH=' "${ROOT}/.env" 2>/dev/null | cut -d= -f2- || echo '?')"
 
 echo ""
 echo "=================================================="

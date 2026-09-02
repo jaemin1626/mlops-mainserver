@@ -276,12 +276,12 @@ if [ -f "$SERVERS_CONF" ]; then
 else
     warn "${SERVERS_CONF} 없음 — 주소를 각 .env 에서 직접 고쳐야 합니다"
 fi
-[ -f "${CLEARML_DIR}/secrets/.env" ] || warn "${CLEARML_DIR}/secrets/.env 없음 — agent-services 자격증명·호스트 주소가 비어 있습니다"
+[ -f "${CLEARML_DIR}/.env" ] || warn "${CLEARML_DIR}/.env 없음 — agent-services 자격증명·호스트 주소가 비어 있습니다"
 
 step "서명 키 확인"
 # 기본 키를 그대로 쓰면 다른 서버가 발급한 토큰이 서명 검증을 통과해서
 # 낡은 쿠키가 401 대신 400 을 받고, UI 헤더·사이드바가 안 그려진다.
-if grep -qE '^CLEARML_TOKEN_SECRET=.' "${CLEARML_DIR}/secrets/.env" 2>/dev/null; then
+if grep -qE '^CLEARML_TOKEN_SECRET=.' "${CLEARML_DIR}/.env" 2>/dev/null; then
     ok "이 서버 고유 JWT 서명 키 사용 중"
 else
     warn "서명 키가 없습니다 — ClearML 기본 공개 키를 쓰게 됩니다"
