@@ -3,7 +3,7 @@
 #
 #   start.sh 하나로 아래를 순서대로 실행합니다 (마운트 실패해도 MLOps 는 기동):
 #     1. nfs-common 설치 (없으면)
-#     2. Dataset NFS 마운트 (dataset-mount.env)
+#     2. Dataset NFS 마운트 (.env)
 #     3. .env 생성·갱신
 #     4. docker compose up
 #     5. data-studio 재기동 (마운트 경로 반영)
