@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ app_title }}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="page-shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">ClearML Model Console</p>
+        <h1>{{ app_title }}</h1>
+        <p class="lead">
+          ClearML publish 모델을 관리하고, 외부 평가 요청과 평가 결과 확인, 최종 배포 결정을 한 화면에서 처리합니다.
+        </p>
+      </div>
+      <div class="hero-actions">
+        <div class="hero-toolbar">
+          <form class="mode-switch" action="/settings/evaluation-mode" method="post">
+            <button class="mode-button {% if evaluation_mode == 'manual' %}active{% endif %}" type="submit" name="evaluation_mode" value="manual">Manual</button>
+            <button class="mode-button {% if evaluation_mode == 'auto' %}active{% endif %}" type="submit" name="evaluation_mode" value="auto">Auto</button>
+          </form>
+          <div class="theme-switch" aria-label="theme mode toggle">
+            <button class="theme-toggle" type="button" data-theme-value="light">Light</button>
+            <button class="theme-toggle" type="button" data-theme-value="dark">Dark</button>
+          </div>
+          <form action="/sync-now" method="post">
+            <button class="button primary sync-button" type="submit">지금 동기화</button>
+          </form>
+        </div>
+        <div class="meta-block mode-summary">
+          <span>평가 요청 모드</span>
+          <strong>{{ evaluation_mode|upper }}</strong>
+          <p>
+            {% if evaluation_mode == 'auto' %}
+            신규 publish 모델을 발견하면 기본 큐로 평가 요청을 자동 생성합니다.
+            {% else %}
+            사용자가 모델 상세 화면에서 직접 평가 요청 버튼을 눌러 평가를 시작합니다.
+            {% endif %}
+          </p>
+        </div>
+      </div>
+    </section>
+
+    {% if last_error %}
+    <section class="banner error">
+      <strong>최근 동기화 오류</strong>
+      <span>{{ last_error }}</span>
+    </section>
+    {% else %}
+    <section class="banner ok">
+      <strong>동기화 정상</strong>
+      <span>최근 동기화 모델 수 {{ last_synced_count }}</span>
+    </section>
+    {% endif %}
+
+    <section class="stats-grid">
+      <article class="stat-card accent-a">
+        <span>Published Models</span>
+        <strong>{{ publish_summary.total }}</strong>
+      </article>
+      <article class="stat-card accent-b">
+        <span>Detection</span>
+        <strong>{{ publish_summary.detection }}</strong>
+      </article>
+      <article class="stat-card accent-c">
+        <span>Classification</span>
+        <strong>{{ publish_summary.classification }}</strong>
+      </article>
+      <article class="stat-card accent-d">
+        <span>With Metrics</span>
+        <strong>{{ publish_summary.with_metrics }}</strong>
+      </article>
+      <article class="stat-card accent-e">
+        <span>Deployed</span>
+        <strong>{{ publish_summary.deployed }}</strong>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Published Models</h2>
+        <p>publish 모델 목록을 표로 보고, 항목을 선택하면 아래에서 상세 정보를 확인합니다.</p>
+      </div>
+      {% if models %}
+      <div class="table-wrap model-list-wrap">
+        <table class="model-list-table">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Model</th>
+              <th>Artifact</th>
+              <th>Published</th>
+              <th>State</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for model in models %}
+            <tr class="model-row {% if selected_model and model.model_id == selected_model.model_id %}selected{% endif %}">
+              <td><a class="row-link" href="/?selected={{ model.model_id }}">{{ model.project_short_name }}</a></td>
+              <td>{{ model.name }}</td>
+              <td>{{ model.artifact_name or '-' }}</td>
+              <td>{{ model.source_last_update or '-' }}</td>
+              <td>{{ model.display_status }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if selected_model %}
+      <div class="detail-panel">
+        <div class="panel-head detail-head">
+          <div>
+            <h2>Model Detail</h2>
+            <p>{{ selected_model.project_name }}</p>
+          </div>
+          <div class="pill-stack">
+            <span class="pill ready">published</span>
+            <span class="pill neutral">{{ selected_model.display_status }}</span>
+            {% if selected_model.deployment_status %}
+            <span class="pill pending">{{ selected_model.deployment_status }}</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="detail-title-block">
+          <p class="card-label">{{ selected_model.project_short_name }}</p>
+          <h3>{{ selected_model.name }}</h3>
+          <p>{{ selected_model.published_model_name or '-' }}</p>
+        </div>
+
+        {% if selected_model.metric_cards %}
+        <div class="metric-grid">
+          {% for metric in selected_model.metric_cards %}
+          <div class="metric-card">
+            <span>{{ metric.label }}</span>
+            <strong>{{ metric.value }}</strong>
+            <small>iter {{ metric.iter }}</small>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="empty-line">표시 가능한 학습 metric이 없습니다.</p>
+        {% endif %}
+
+        <dl class="kv-grid compact">
+          <div><dt>Published Name</dt><dd>{{ selected_model.published_model_name or '-' }}</dd></div>
+          <div><dt>Artifact</dt><dd>{{ selected_model.artifact_name or '-' }}</dd></div>
+          <div><dt>Task ID</dt><dd>{{ selected_model.task_id or '-' }}</dd></div>
+          <div><dt>Framework</dt><dd>{{ selected_model.framework or '-' }}</dd></div>
+          <div><dt>Created</dt><dd>{{ selected_model.task_created or '-' }}</dd></div>
+          <div><dt>Completed</dt><dd>{{ selected_model.task_completed or '-' }}</dd></div>
+          <div><dt>Published At</dt><dd>{{ selected_model.source_last_update or '-' }}</dd></div>
+          <div><dt>State</dt><dd>{{ selected_model.display_status }}</dd></div>
+          <div><dt>Publish Reason</dt><dd>{{ selected_model.publish_reason or '-' }}</dd></div>
+          <div><dt>Latest Eval</dt><dd>{{ selected_model.latest_run_status or '-' }}</dd></div>
+          <div><dt>Deployment</dt><dd>{{ selected_model.deployment_status or 'pending' }}</dd></div>
+          <div class="full"><dt>Latest URI</dt><dd class="break-all">{{ selected_model.uri or '-' }}</dd></div>
+        </dl>
+
+        <section class="action-card request-card">
+          <strong>Evaluation Request</strong>
+          <p>
+            {% if evaluation_mode == 'auto' %}
+            자동 모드가 활성화되어 있어 신규 publish 모델은 기본 큐 {{ default_queue }} 로 자동 요청됩니다.
+            {% else %}
+            수동 모드입니다. 필요할 때 외부 평가툴로 평가 요청을 보냅니다.
+            {% endif %}
+          </p>
+          {% if evaluation_mode == 'manual' %}
+          <form action="/models/{{ selected_model.model_id }}/request-eval" method="post">
+            <button class="button secondary" type="submit">
+              {% if selected_model.latest_run_id %}재평가 요청{% else %}평가 요청{% endif %}
+            </button>
+          </form>
+          {% endif %}
+        </section>
+
+        <section class="action-card result-card">
+          <strong>Latest Evaluation Result</strong>
+          {% if selected_model.latest_run_id %}
+          <dl class="kv-grid compact result-meta-grid compact-top">
+            <div><dt>Status</dt><dd>{{ selected_model.latest_run_status or '-' }}</dd></div>
+            <div><dt>Requested</dt><dd>{{ selected_model.latest_run_requested_at or '-' }}</dd></div>
+            <div><dt>Finished</dt><dd>{{ selected_model.latest_run_finished_at or '-' }}</dd></div>
+            <div><dt>Evaluator</dt><dd>{{ selected_model.latest_run_evaluator_host or '-' }}</dd></div>
+            <div><dt>External Job</dt><dd>{{ selected_model.latest_run_external_job_id or '-' }}</dd></div>
+            <div class="full"><dt>Summary</dt><dd>{{ selected_model.latest_run_result_summary or '-' }}</dd></div>
+          </dl>
+
+          {% if selected_model.result_tables.summary_rows %}
+          <div class="table-wrap result-table-wrap compact-top">
+            <table class="result-summary-table">
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in selected_model.result_tables.summary_rows %}
+                <tr>
+                  <td>{{ row.label }}</td>
+                  <td>{{ row.value }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+
+          {% if selected_model.result_tables.item_rows %}
+          <div class="table-wrap result-table-wrap result-items-wrap compact-top">
+            <table class="result-items-table">
+              <thead>
+                <tr>
+                  <th>Filename</th>
+                  <th>TP</th>
+                  <th>TN</th>
+                  <th>FP</th>
+                  <th>FN</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in selected_model.result_tables.item_rows %}
+                <tr>
+                  <td>{{ row.filename }}</td>
+                  <td>{{ row.tp }}</td>
+                  <td>{{ row.tn }}</td>
+                  <td>{{ row.fp }}</td>
+                  <td>{{ row.fn }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% elif selected_model.result_tables.raw_metrics %}
+          <div class="result-box"><pre>{{ selected_model.result_tables.raw_metrics | tojson(indent=2) }}</pre></div>
+          {% endif %}
+          {% else %}
+          <p class="empty-line">아직 평가 결과가 없습니다.</p>
+          {% endif %}
+
+          <form class="result-upload-form" action="/models/{{ selected_model.model_id }}/upload-result" method="post" enctype="multipart/form-data">
+            <input type="file" name="result_file" accept=".csv,.json">
+            <textarea name="result_json" rows="5" placeholder='{"result_summary":"F1=0.642857, accuracy=0.7","metrics":{"average_f1_score":0.642857,"average_accuracy":0.7}}'></textarea>
+            <input type="text" name="evaluator_host" placeholder="evaluator host">
+            <input type="text" name="external_job_id" placeholder="external job id">
+            <input type="text" name="notes" placeholder="notes">
+            <button class="button secondary" type="submit">평가 결과 업로드</button>
+          </form>
+        </section>
+
+        <section class="info-note">
+          <strong>Final Deployment Decision</strong>
+          <p>평가가 완료되면 결과를 검토한 뒤 최종 배포 여부를 결정합니다.</p>
+          <dl class="kv-grid compact single-column compact-top">
+            <div><dt>Decision</dt><dd>{{ selected_model.deployment_status or 'pending' }}</dd></div>
+            <div><dt>Decided At</dt><dd>{{ selected_model.deployment_decided_at or '-' }}</dd></div>
+            <div class="full"><dt>Note</dt><dd>{{ selected_model.deployment_note or '-' }}</dd></div>
+          </dl>
+          <form class="deployment-form" action="/models/{{ selected_model.model_id }}/deployment" method="post">
+            <input type="text" name="deployment_note" placeholder="배포 결정 메모">
+            <button class="button primary" type="submit" name="deployment_status" value="deployed" {% if selected_model.latest_run_status != 'completed' %}disabled{% endif %}>배포 승인</button>
+            <button class="button tertiary" type="submit" name="deployment_status" value="hold" {% if selected_model.latest_run_status != 'completed' %}disabled{% endif %}>배포 보류</button>
+          </form>
+          {% if selected_model.latest_run_status != 'completed' %}
+          <p class="hint-line">배포 결정은 평가가 완료된 뒤 활성화됩니다.</p>
+          {% endif %}
+        </section>
+      </div>
+      {% endif %}
+      {% else %}
+      <article class="empty-card">
+        <h3>표시할 모델이 없습니다</h3>
+        <p>현재 publish 완료된 모델이 없습니다. 동기화를 다시 실행하세요.</p>
+      </article>
+      {% endif %}
+    </section>
+  </main>
+  <script>
+    (function () {
+      const storageKey = "model-eval-theme";
+      const root = document.documentElement;
+      const buttons = Array.from(document.querySelectorAll(".theme-toggle"));
+
+      function applyTheme(theme) {
+        root.setAttribute("data-theme", theme);
+        for (const button of buttons) {
+          const active = button.dataset.themeValue === theme;
+          button.classList.toggle("active", active);
+          button.setAttribute("aria-pressed", active ? "true" : "false");
+        }
+      }
+
+      const savedTheme = localStorage.getItem(storageKey);
+      const preferredDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      applyTheme(savedTheme || (preferredDark ? "dark" : "light"));
+
+      for (const button of buttons) {
+        button.addEventListener("click", function () {
+          const theme = button.dataset.themeValue || "light";
+          localStorage.setItem(storageKey, theme);
+          applyTheme(theme);
+        });
+      }
+    }());
+  </script>
+</body>
+</html>

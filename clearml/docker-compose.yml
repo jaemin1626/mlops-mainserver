@@ -1,0 +1,251 @@
+version: "3.6"
+services:
+
+  apiserver:
+    command:
+    - apiserver
+    container_name: clearml-apiserver
+    image: clearml/server:2.3.0-705
+    restart: unless-stopped
+    volumes:
+    - /opt/clearml/logs:/var/log/clearml
+    - /opt/clearml/config:/opt/clearml/config
+    - /opt/clearml/data/fileserver:/mnt/fileserver
+    depends_on:
+      - redis
+      - mongo
+      - elasticsearch
+      - fileserver
+    environment:
+      CLEARML_ELASTIC_SERVICE_HOST: elasticsearch
+      CLEARML_ELASTIC_SERVICE_PORT: 9200
+      CLEARML_MONGODB_SERVICE_HOST: mongo
+      CLEARML_MONGODB_SERVICE_PORT: 27017
+      CLEARML_REDIS_SERVICE_HOST: redis
+      CLEARML_REDIS_SERVICE_PORT: 6379
+      CLEARML_SERVER_DEPLOYMENT_TYPE: linux
+      CLEARML__apiserver__pre_populate__enabled: "false"
+      CLEARML__apiserver__pre_populate__zip_files: "/opt/clearml/db-pre-populate"
+      CLEARML__apiserver__pre_populate__artifacts_path: "/mnt/fileserver"
+      CLEARML__services__async_urls_delete__enabled: "true"
+      CLEARML__services__async_urls_delete__fileserver__url_prefixes: "[${CLEARML_FILES_HOST:-}]"
+      CLEARML__secure__credentials__services_agent__user_key: ${CLEARML_AGENT_ACCESS_KEY:-}
+      CLEARML__secure__credentials__services_agent__user_secret: ${CLEARML_AGENT_SECRET_KEY:-}
+      # 서버 고유 서명 키. 비워두면 GitHub 에 공개된 ClearML 기본 키를 쓰게 되므로
+      # 값이 없으면 아예 기동을 막는다. packaging/gen-secrets.sh 로 만든다.
+      CLEARML__secure__auth__token_secret: ${CLEARML_TOKEN_SECRET:?packaging/gen-secrets.sh 를 먼저 실행하세요}
+      CLEARML__secure__http__session_secret__apiserver: ${CLEARML_SESSION_SECRET:?packaging/gen-secrets.sh 를 먼저 실행하세요}
+    ports:
+    - "8008:8008"
+    networks:
+      - backend
+      - frontend
+
+  elasticsearch:
+    networks:
+      - backend
+    container_name: clearml-elastic
+    environment:
+      bootstrap.memory_lock: "true"
+      cluster.name: clearml
+      cluster.routing.allocation.node_initial_primaries_recoveries: "500"
+      cluster.routing.allocation.disk.watermark.low: 500mb
+      cluster.routing.allocation.disk.watermark.high: 500mb
+      cluster.routing.allocation.disk.watermark.flood_stage: 500mb
+      discovery.type: "single-node"
+      http.compression_level: "7"
+      node.name: clearml
+      reindex.remote.whitelist: "'*.*'"
+      xpack.security.enabled: "false"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    image: elasticsearch:8.17.0
+    restart: unless-stopped
+    volumes:
+      - /opt/clearml/data/elastic_7:/usr/share/elasticsearch/data
+      - /usr/share/elasticsearch/logs
+
+  fileserver:
+    networks:
+      - backend
+      - frontend
+    command:
+    - fileserver
+    container_name: clearml-fileserver
+    image: clearml/server:2.3.0-705
+    environment:
+      CLEARML__fileserver__delete__allow_batch: "true"
+      CLEARML__secure__auth__token_secret: ${CLEARML_TOKEN_SECRET:?packaging/gen-secrets.sh 를 먼저 실행하세요}
+    restart: unless-stopped
+    volumes:
+    - /opt/clearml/logs:/var/log/clearml
+    - /opt/clearml/data/fileserver:/mnt/fileserver
+    - /opt/clearml/config:/opt/clearml/config
+    ports:
+    - "8081:8081"
+
+  mongo:
+    networks:
+      - backend
+    container_name: clearml-mongo
+    image: mongo:7.0.22
+    restart: unless-stopped
+    command: --setParameter internalQueryMaxBlockingSortMemoryUsageBytes=196100200
+    volumes:
+    - /opt/clearml/data/mongo_4/db:/data/db
+    - /opt/clearml/data/mongo_4/configdb:/data/configdb
+
+  redis:
+    networks:
+      - backend
+    container_name: clearml-redis
+    image: redis:7.4.1
+    restart: unless-stopped
+    volumes:
+    - /opt/clearml/data/redis:/data
+
+  webserver:
+    command:
+    - webserver
+    container_name: clearml-webserver
+    # branding·nginx 를 이미지에 박아 넣음. bind mount 로 순정 파일이 새는 일 없음.
+    # 갱신: packaging/build-webserver-image.sh → compose up --force-recreate webserver
+    image: clearml-webserver-intellivix:20260825
+    build:
+      context: /opt/clearml
+      dockerfile: branding/Dockerfile.webserver
+    restart: unless-stopped
+    # nginx 설정·index.html 은 자주 바꾸므로 mount (JS/CSS 등 자산은 이미지에 포함)
+    volumes:
+    - /opt/clearml/nginx/default.d:/etc/nginx/default.d:ro
+    - /opt/clearml/branding/index.html:/usr/share/nginx/html/index.html:ro
+    - /opt/clearml/branding/env.js:/usr/share/nginx/html/env.js:ro
+    - /opt/clearml/branding/ivx-sidebar.css:/usr/share/nginx/html/ivx-sidebar.css:ro
+    - /opt/clearml/branding/ivx-sidebar.js:/usr/share/nginx/html/ivx-sidebar.js:ro
+    - /opt/clearml/branding/ivx-dashboard.js:/usr/share/nginx/html/ivx-dashboard.js:ro
+    depends_on:
+      - apiserver
+      - data-studio
+    ports:
+    - "8080:80"
+    networks:
+      - backend
+      - frontend
+
+  data-studio:
+    image: clearml-data-studio:pin-20260826-v4
+    build:
+      context: /opt/data_studio
+      dockerfile: Dockerfile
+    container_name: clearml-data-studio
+    restart: unless-stopped
+    environment:
+      DATA_STUDIO_PORT: "8091"
+      DATA_STUDIO_ALLOWED_ROOTS: /data/datasets
+    volumes:
+      # HOST_DATASET_PATH(호스트) → 컨테이너 /data/datasets (dataset-mount.env)
+      - ${DATASET_EXPORT_PATH:-/opt/clearml/data/datasets}:/data/datasets
+    networks:
+      - frontend
+
+  model-eval-console:
+    image: clearml-model-eval-console:pin-20260821
+    build:
+      context: ./model_eval_console
+      dockerfile: Dockerfile
+    container_name: model-eval-console
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      MODEL_EVAL_MONGO_URI: mongodb://mongo:27017
+      MODEL_EVAL_MONGO_DB: backend
+      MODEL_EVAL_ELASTIC_URI: http://elasticsearch:9200
+      MODEL_EVAL_DB_PATH: /app/data/console.db
+      MODEL_EVAL_DEFAULT_QUEUE: eval-windows
+    volumes:
+      - /opt/clearml/model_eval_console/data:/app/data
+    ports:
+      - "8090:8090"
+    networks:
+      - backend
+      - frontend
+
+  async_delete:
+    depends_on:
+      - apiserver
+      - redis
+      - mongo
+      - elasticsearch
+      - fileserver
+    container_name: async_delete
+    image: clearml/server:2.3.0-705
+    networks:
+      - backend
+    restart: unless-stopped
+    environment:
+      CLEARML_ELASTIC_SERVICE_HOST: elasticsearch
+      CLEARML_ELASTIC_SERVICE_PORT: 9200
+      CLEARML_MONGODB_SERVICE_HOST: mongo
+      CLEARML_MONGODB_SERVICE_PORT: 27017
+      CLEARML_REDIS_SERVICE_HOST: redis
+      CLEARML_REDIS_SERVICE_PORT: 6379
+      PYTHONPATH: /opt/clearml/apiserver
+      CLEARML__services__async_urls_delete__fileserver__url_prefixes: "[${CLEARML_FILES_HOST:-}]"
+    entrypoint:
+      - python3
+      - -m
+      - jobs.async_urls_delete
+      - --fileserver-host
+      - http://fileserver:8081
+    volumes:
+      - /opt/clearml/logs:/var/log/clearml
+      - /opt/clearml/config:/opt/clearml/config
+
+  agent-services:
+    networks:
+      - backend
+    container_name: clearml-agent-services
+    image: clearml/clearml-agent-services:pin-20260821
+    deploy:
+      restart_policy:
+        condition: on-failure
+    privileged: true
+    environment:
+      CLEARML_HOST_IP: ${CLEARML_HOST_IP}
+      CLEARML_WEB_HOST: ${CLEARML_WEB_HOST:-}
+      CLEARML_API_HOST: http://apiserver:8008
+      CLEARML_FILES_HOST: ${CLEARML_FILES_HOST:-}
+      CLEARML_API_ACCESS_KEY: ${CLEARML_AGENT_ACCESS_KEY:-$CLEARML_API_ACCESS_KEY}
+      CLEARML_API_SECRET_KEY: ${CLEARML_AGENT_SECRET_KEY:-$CLEARML_API_SECRET_KEY}
+      CLEARML_AGENT_GIT_USER: ${CLEARML_AGENT_GIT_USER}
+      CLEARML_AGENT_GIT_PASS: ${CLEARML_AGENT_GIT_PASS}
+      CLEARML_AGENT_UPDATE_VERSION: ${CLEARML_AGENT_UPDATE_VERSION:->=0.17.0}
+      CLEARML_AGENT_DEFAULT_BASE_DOCKER: "ubuntu:18.04"
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-}
+      AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}
+      AZURE_STORAGE_KEY: ${AZURE_STORAGE_KEY:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      CLEARML_WORKER_ID: "clearml-services"
+      CLEARML_AGENT_DOCKER_HOST_MOUNT: "/opt/clearml/agent:/root/.clearml"
+      SHUTDOWN_IF_NO_ACCESS_KEY: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/clearml/agent:/root/.clearml
+    depends_on:
+      - apiserver
+    entrypoint: >
+      bash -c "curl --retry 10 --retry-delay 10 --retry-connrefused 'http://apiserver:8008/debug.ping' && /usr/agent/entrypoint.sh"
+
+networks:
+  backend:
+    driver: bridge
+  frontend:
+    driver: bridge

@@ -1,0 +1,29 @@
+# ── clearml (runtime / secrets) ──
+clearml/secrets/
+clearml/data/
+clearml/logs/
+clearml/agent/
+clearml/config/apiserver.conf
+
+# ── monitoring (runtime) ──
+clearml/clearml-monitoring/monitoring-deploy/data/
+clearml/clearml-monitoring/monitoring-deploy/.env
+clearml/clearml-monitoring/monitoring-deploy/.env.*
+!clearml/clearml-monitoring/monitoring-deploy/.env.example
+
+# ── data_studio (build) ──
+data_studio/node_modules/
+data_studio/dist/
+data_studio/release/
+data_studio/.env
+data_studio/.env.*
+
+# ── common ──
+**/__pycache__/
+**/*.pyc
+**/.DS_Store
+**/*.bak*
+**/*.bak-*
+**/.env
+**/.env.*
+!**/.env.example

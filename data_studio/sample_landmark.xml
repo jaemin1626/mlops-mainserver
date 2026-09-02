@@ -1,0 +1,21 @@
+<?xml version="1.0" ?>
+<Annotation>
+  <filename>C-220805_08_CR02_01_N4088_bottom_right.jpg</filename>
+  <object>
+    <index>0</index>
+    <name>face</name>
+    <bndbox>
+      <xmin>714.958</xmin>
+      <ymin>0.220</ymin>
+      <xmax>781.056</xmax>
+      <ymax>15.639</ymax>
+    </bndbox>
+    <points>
+      <p0>714.958,0.220</p0>
+      <p1>781.056,0.220</p1>
+      <p2>781.056,15.639</p2>
+      <p3>714.958,15.639</p3>
+    </points>
+    <type>Normal</type>
+  </object>
+</Annotation>

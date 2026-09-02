@@ -1,0 +1,84 @@
+services:
+
+  # ── ClearML Prometheus Exporter ─────────────────────────────
+  clearml-exporter:
+    image: monitoring-deploy-clearml-exporter:pin-20260821
+    build:
+      context: ./clearml-exporter
+      dockerfile: Dockerfile
+    container_name: clearml-exporter
+    restart: unless-stopped
+    environment:
+      # 원격 서버에서 실행 시 host.docker.internal → 같은 서버의 localhost
+      CLEARML_API_HOST: "${CLEARML_API_HOST:-http://host.docker.internal:8080}"
+      CLEARML_ACCESS_KEY: "${CLEARML_ACCESS_KEY}"
+      CLEARML_SECRET_KEY: "${CLEARML_SECRET_KEY}"
+      SCRAPE_INTERVAL_SEC: "${SCRAPE_INTERVAL_SEC:-60}"
+      FREQUENCY_WINDOW_DAYS: "${FREQUENCY_WINDOW_DAYS:-30}"
+      EXPORTER_PORT: "9090"
+      GRAFANA_URL: "http://grafana:3000"
+      GRAFANA_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GRAFANA_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-clearml123!}"
+      GRAFANA_DASH_UID: "clearml-mlops-main"
+      TAGGING_TOOL_URL: "${TAGGING_TOOL_URL:-}"
+      GITLAB_URL: "${GITLAB_URL:-}"
+      GITLAB_TOKEN: "${GITLAB_TOKEN:-}"
+      GITLAB_PROJECT_IDS: "${GITLAB_PROJECT_IDS:-}"
+      # 예: 1bc44d31189f=DGX-A100,ailab13=AILAB13,ivxlab9-Super-Server=IVXLAB9
+      SERVER_HOST_ALIASES: "${SERVER_HOST_ALIASES:-}"
+    extra_hosts:
+      # Linux 도커에서 host.docker.internal 사용 가능하게 함
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${EXPORTER_PORT:-9090}:9090"
+    networks:
+      - monitoring
+
+  # ── Prometheus ───────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:pin-20260821
+    container_name: clearml-prometheus
+    restart: unless-stopped
+    user: "65534:65534"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=90d"
+      - "--web.listen-address=:9091"
+      - "--web.enable-lifecycle"
+      - "--web.enable-admin-api"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./data/prometheus:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9091}:9091"
+    networks:
+      - monitoring
+
+  # ── Grafana ──────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:pin-20260821
+    container_name: clearml-grafana
+    restart: unless-stopped
+    user: "472:472"
+    depends_on:
+      - prometheus
+    environment:
+      TZ: "Asia/Seoul"
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-clearml123!}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "http://${SERVER_HOST:-localhost}:${GRAFANA_PORT:-3000}"
+      GF_DEFAULT_PREFERENCES_TIMEZONE: "Asia/Seoul"
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./data/grafana:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    driver: bridge

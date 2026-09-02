@@ -1,0 +1,24 @@
+# ComfyUI + LTX 2.3 distilled FP8 (CUDA 12.x, Python 3.11, 24GB GPU)
+# 인터넷 PC에서 collect_online.sh가 이 파일을 기준으로 wheel을 받습니다.
+# torch 인덱스는 수집 환경 CUDA에 맞게 바꾸세요.
+
+torch
+torchvision
+torchaudio
+numpy
+einops
+transformers
+safetensors
+aiohttp
+pyyaml
+Pillow
+scipy
+tqdm
+psutil
+kornia
+spandrel
+av
+sentencepiece
+protobuf
+tokenizers
+accelerate

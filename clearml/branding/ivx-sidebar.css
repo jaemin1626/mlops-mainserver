@@ -1,0 +1,12 @@
+/* Intellivix — 사이드바에서 불필요한 ClearML 메뉴 숨김 */
+sm-side-nav .al-ico-queues,
+sm-side-nav .al-ico-model-endpoints,
+sm-side-nav .al-ico-pipelines,
+sm-side-nav a:has(.al-ico-queues),
+sm-side-nav a:has(.al-ico-model-endpoints),
+sm-side-nav a:has(.al-ico-pipelines),
+sm-side-nav button:has(.al-ico-queues),
+sm-side-nav button:has(.al-ico-model-endpoints),
+sm-side-nav button:has(.al-ico-pipelines) {
+  display: none !important;
+}

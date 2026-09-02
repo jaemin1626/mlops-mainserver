@@ -1,0 +1,6 @@
+paddleocr>=3.7.0
+opencv-python-headless
+# PP-OCRv5 mobile/server · PP-OCRv6 tiny(최경량) — OCR 탭 모델 선택
+# v6: paddleocr>=3.7, paddlepaddle>=3.0 권장
+# GPU (권장): https://www.paddlepaddle.org.cn/install/quick — paddlepaddle-gpu
+# OCR Python 경로: OCR_PYTHON 환경변수 또는 PATH의 python

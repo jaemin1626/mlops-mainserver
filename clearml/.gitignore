@@ -1,0 +1,35 @@
+# secrets & runtime data — never commit
+secrets/
+config/apiserver.conf
+agent/
+data/
+logs/
+*.bak*
+*.bak-*
+.env
+.env.*
+
+# local overrides
+__pycache__/
+*.pyc
+*.swp
+*.tmp
+.DS_Store
+
+# monitoring stack runtime (monorepo: clearml-monitoring/monitoring-deploy/)
+clearml-monitoring/monitoring-deploy/data/
+clearml-monitoring/monitoring-deploy/.env
+clearml-monitoring/monitoring-deploy/.env.*
+!clearml-monitoring/monitoring-deploy/.env.example
+clearml-monitoring/monitoring-deploy/*.orig
+clearml-monitoring/monitoring-deploy/docker-compose.yml.orig
+
+# data-studio runtime / build artifacts
+data-studio/node_modules/
+data-studio/dist/
+data-studio/release/
+data-studio/.env
+data-studio/.env.*
+data-studio/npm-debug.log*
+data-studio/version_bak/
+.

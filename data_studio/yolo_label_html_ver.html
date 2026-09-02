@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>YOLO Web Annotator - Ultimate Fix v18</title>
+    <style>
+        body { background-color: rgb(0, 0, 17); color: rgb(0, 255, 255); font-family: sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        #sidebar { width: 380px; padding: 10px; border-right: 2px solid rgb(0, 255, 255); display: flex; flex-direction: column; gap: 8px; overflow-y: auto; z-index: 10; font-size: 13px; }
+        
+        #main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        #canvas-container { flex: 1; position: relative; overflow: hidden; background: #111; outline: none; }
+        #bg-canvas, #fg-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        #bg-canvas { pointer-events: none; z-index: 1; }
+        #fg-canvas { z-index: 2; cursor: crosshair; }
+        
+        #box-info-bar { height: 26px; line-height: 26px; background: #000; border-top: 1px solid rgb(0, 255, 255); color: #fff; font-size: 12px; font-family: monospace; padding: 0 10px; display: flex; white-space: nowrap; overflow: hidden; }
+
+        button, input, select { background-color: rgb(0, 0, 17); color: rgb(0, 255, 255); border: 1px solid rgb(0, 255, 255); padding: 5px; cursor: pointer; outline: none; font-weight: bold; font-size: 12px; }
+        button:hover { background-color: rgb(34, 0, 85); }
+        input[type="text"], input[type="number"] { width: 60px; }
+        input[type="range"] { cursor: pointer; margin: 0 5px; vertical-align: middle; }
+        
+        .panel { border: 1px solid rgb(0, 255, 255); padding: 8px; }
+        .panel h3 { margin: 0 0 8px 0; font-size: 13px; color: rgb(255, 187, 0); }
+        .flex-row { display: flex; justify-content: space-between; align-items: center; gap: 5px; }
+        
+        #fileList { flex: none; overflow-y: auto; border: 1px solid rgb(0,255,255); padding: 5px; height: 80px; min-height: 60px; }
+        .file-item { padding: 3px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .file-item:hover { background-color: rgb(34, 0, 85); }
+        .active-file { background-color: rgb(0, 255, 255); color: rgb(0, 0, 17); font-weight: bold; }
+        
+        .class-row { display: flex; align-items: center; gap: 5px; margin-bottom: 2px; padding: 3px; border: 1px solid transparent; cursor: pointer; transition: background 0.2s; }
+        .class-row:hover { background-color: rgba(0, 255, 255, 0.1); }
+        .active-class { background-color: rgba(0, 255, 255, 0.25) !important; border: 1px solid #0FF !important; }
+        
+        .class-color { 
+            width: 22px; height: 22px; border: 1px solid #fff; cursor: pointer; padding: 0; 
+            -webkit-appearance: none; -moz-appearance: none; appearance: none;
+            background: transparent;
+        }
+        .class-color::-webkit-color-swatch-wrapper { padding: 0; }
+        .class-color::-webkit-color-swatch { border: none; }
+        .class-color::-moz-color-swatch { border: none; }
+        .class-name { flex: 1; background: transparent; border: 1px solid #444; color: #fff; padding: 2px 4px; }
+		.class-count { display: inline-block; width: 30px; text-align: right; font-size: 12px; color: rgb(255, 187, 0); font-weight: bold; margin-right: 5px; }
+        .btn-delete { color: #FF3333; background: transparent; border: none; cursor: pointer; font-weight: bold; padding: 0 4px; }
+        .btn-delete:hover { background: #FF3333; color: #fff; }
+        
+        #currentPathDisplay { flex: 1; font-size: 11px; color: #aaa; word-break: break-all; background: #000; padding: 4px; border: 1px dashed #444; }
+        
+        .btn-folder { flex: 1; padding: 6px 2px; text-align: center; border: 1px solid #0FF; cursor: pointer; font-weight: bold; font-size: 11px; }
+        .btn-folder:hover { background-color: rgb(34, 0, 85); }
+
+        #shortcutModal { display: none; position: fixed; top: 10%; left: 50%; transform: translateX(-50%); background: rgb(0,0,17); border: 2px solid rgb(0,255,255); padding: 20px; z-index: 100; max-height: 80%; overflow-y: auto; box-shadow: 0 0 20px rgba(0,255,255,0.3); }
+        #shortcutModal table { width: 100%; border-collapse: collapse; color: white; }
+        #shortcutModal th, #shortcutModal td { border: 1px solid #444; padding: 5px; text-align: left; }
+        
+        /* Log Panel Style */
+        #logPanel { height: 70px; overflow-y: auto; background-color: #000; color: #0f0; padding: 5px; font-size: 11px; font-family: monospace; border: 1px solid #444; line-height: 1.4; }
+        .log-error { color: #f33; }
+        .log-info { color: #aaa; }
+    </style>
+</head>
+<body>
+
+    <datalist id="presetColors">
+        <option value="#FF0000">Red</option><option value="#00FF00">Green</option><option value="#0000FF">Blue</option>
+        <option value="#FFFF00">Yellow</option><option value="#FF00FF">Magenta</option><option value="#00FFFF">Cyan</option>
+        <option value="#FFA500">Orange</option><option value="#800080">Purple</option><option value="#FFFFFF">White</option>
+    </datalist>
+
+    <input type="file" id="fallbackDirInput" webkitdirectory directory multiple style="display: none;">
+    <input type="file" id="classLoaderInput" accept=".txt" style="display: none;">
+
+    <div id="sidebar">
+        <div class="panel">
+            <h3>1. 탐색 & 로컬 동기화</h3>
+            <div class="flex-row">
+                <button id="btnOpenDir" class="btn-folder" title="크롬 전용 (자동 덮어쓰기 지원)">📁 이미지 폴더 열기 (자동 저장 지원)</button>
+            </div>
+            <div class="flex-row" style="margin-top: 5px;">
+                <div id="currentPathDisplay">경로: 폴더 없음</div>
+                <button id="btnCopyPath" style="padding: 4px;" title="클립보드에 경로 복사">복사</button>
+            </div>
+            <div class="flex-row" style="margin-top: 5px;">
+                <input type="text" id="searchInput" placeholder="파일 검색(Ctrl+F)" style="flex: 2;">
+                <input type="number" id="jumpInput" placeholder="인덱스(G)" style="flex: 1;" min="1">
+                <button id="btnJump">이동</button>
+            </div>
+            <div class="flex-row" style="margin-top: 5px;">
+                <button id="btnPrev">◀ Prev (A)</button>
+                <span id="pageInfo">0 / 0</span>
+                <button id="btnNext">Next (D) ▶</button>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="flex-row">
+                <h3 id="classManagerTitle">2. 클래스 매니저 (총 0개)</h3>
+                <div>
+                    <button id="btnLoadClasses" style="padding: 2px 5px;" title="Ctrl+L">📁 불러오기</button>
+                    <button id="btnAddClass" style="padding: 2px 5px;">+ 추가</button>
+                </div>
+            </div>
+            <div id="classList" style="max-height: 500px; overflow-y: auto; border: 1px solid #444; padding: 5px; margin-top: 5px;"></div>
+            <select id="classSelector" style="width: 100%; margin-top: 5px; display: none;"></select>
+        </div>
+
+        <div class="panel">
+            <h3>3. 보기 설정 및 처리</h3>
+            <div class="flex-row" style="margin-bottom: 4px;">
+                <label>선굵기: <input type="number" id="thicknessInput" min="-1" max="10" value="3" style="width: 35px;"></label>
+                <button id="btnScreenshot" style="padding: 2px 5px;">캡쳐(C)</button>
+            </div>
+            <div class="flex-row" style="margin-bottom: 4px;">
+                <label style="cursor: pointer;"><input type="checkbox" id="showBoxInfo" checked> 하단 정보창 표시</label>
+                <label style="cursor: pointer;"><input type="checkbox" id="showClassName" checked> 이름 표시</label>
+            </div>
+            <div class="flex-row" style="margin-bottom: 4px;">
+                <label>밝기: <input type="range" id="brightnessInput" min="1" max="200" value="100" style="width: 80px;"></label>
+                <span id="brightnessVal" style="font-size: 11px; width: 25px;">100</span>
+            </div>
+            <div class="flex-row">
+                <label>감마: <input type="range" id="gammaInput" min="10" max="300" value="100" style="width: 80px;"></label>
+                <span id="gammaVal" style="font-size: 11px; width: 25px;">100</span>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="flex-row">
+                <h3>4. 액션 및 로그</h3>
+                <button id="btnOpenShortcuts" style="background: #225; color: #fff;">단축키 설정</button>
+            </div>
+            <div style="margin-top: 5px; font-size: 12px; border-bottom: 1px solid #444; padding-bottom: 5px; display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <strong>방식:</strong> 
+                    <label style="cursor:pointer;"><input type="radio" name="drawMode" value="drag" checked> 드래그</label>
+                    <label style="cursor:pointer;" title="클릭으로 시작점, 다시 클릭으로 끝점 완성"><input type="radio" name="drawMode" value="click"> 클릭-클릭</label>
+                </div>
+                <button id="btnSaveYolo" style="border-color: rgb(255, 187, 0); color: rgb(255, 187, 0); padding: 2px 8px;">저장(Ctrl+S)</button>
+            </div>
+            <div id="logPanel">로그 준비 완료...</div>
+        </div>
+
+        <div id="fileList"></div>
+    </div>
+
+    <div id="main-area">
+        <div id="canvas-container">
+            <canvas id="bg-canvas"></canvas> 
+            <canvas id="fg-canvas" tabindex="0"></canvas>
+        </div>
+        <div id="box-info-bar">
+            이미지를 열고 박스를 선택하면 정보가 표시됩니다.
+        </div>
+    </div>
+
+    <div id="shortcutModal">
+        <h2 style="margin-top:0;">단축키 매핑 설정</h2>
+        <table id="shortcutTable"></table>
+        <div style="text-align: right; margin-top: 10px;">
+            <button id="btnSaveShortcuts">적용 및 닫기</button>
+            <button onclick="document.getElementById('shortcutModal').style.display='none'">취소</button>
+        </div>
+    </div>
+
+<script>
+class BBox {
+    constructor(classId, x, y, w, h, isSelected = false) {
+        this.classId = classId; this.x = x; this.y = y; this.w = w; this.h = h; this.isSelected = isSelected;
+    }
+    clone() { return new BBox(this.classId, this.x, this.y, this.w, this.h, this.isSelected); }
+    
+    move(dx, dy) {
+        this.x += dx;
+        this.y += dy;
+    }
+
+	// [수정 후 BBox 클래스의 hitTest 함수]
+    hitTest(imgX, imgY, hitMargin, checkHandles = false) {
+        if (checkHandles) { // this.isSelected 조건 제거됨
+            // 여백이 박스 크기의 30%를 넘지 못하도록 제한 (작은 박스 보호)
+            const hs = Math.min(hitMargin, this.w * 0.3, this.h * 0.3);
+
+            if (Math.abs(imgX - this.x) < hs && Math.abs(imgY - this.y) < hs) return 'tl';
+            if (Math.abs(imgX - (this.x + this.w)) < hs && Math.abs(imgY - this.y) < hs) return 'tr';
+            if (Math.abs(imgX - this.x) < hs && Math.abs(imgY - (this.y + this.h)) < hs) return 'bl';
+            if (Math.abs(imgX - (this.x + this.w)) < hs && Math.abs(imgY - (this.y + this.h)) < hs) return 'br';
+            if (Math.abs(imgX - (this.x + this.w/2)) < hs && Math.abs(imgY - this.y) < hs) return 't';
+            if (Math.abs(imgX - (this.x + this.w/2)) < hs && Math.abs(imgY - (this.y + this.h)) < hs) return 'b';
+            if (Math.abs(imgX - this.x) < hs && Math.abs(imgY - (this.y + this.h/2)) < hs) return 'l';
+            if (Math.abs(imgX - (this.x + this.w)) < hs && Math.abs(imgY - (this.y + this.h/2)) < hs) return 'r';
+        }
+        if (imgX >= this.x && imgX <= this.x + this.w && imgY >= this.y && imgY <= this.y + this.h) return 'inside';
+        return null;
+    }
+
+    toYoloString(imgW, imgH) {
+        let left = Math.max(0, this.x); let top = Math.max(0, this.y);
+        let right = Math.min(imgW, this.x + this.w); let bottom = Math.min(imgH, this.y + this.h);
+        let fw = right - left; let fh = bottom - top;
+        if (fw <= 0 || fh <= 0) return null; 
+        const cx = (left + fw / 2) / imgW; const cy = (top + fh / 2) / imgH;
+        const nw = fw / imgW; const nh = fh / imgH;
+        return `${this.classId} ${Math.min(1, Math.max(0, cx)).toFixed(6)} ${Math.min(1, Math.max(0, cy)).toFixed(6)} ${Math.min(1, Math.max(0, nw)).toFixed(6)} ${Math.min(1, Math.max(0, nh)).toFixed(6)}`;
+    }
+}
+
+class HistoryManager {
+    constructor() { this.stack = []; this.currentIndex = -1; }
+    save(bboxes) {
+        this.stack = this.stack.slice(0, this.currentIndex + 1);
+        this.stack.push(bboxes.map(b => b.clone())); 
+        this.currentIndex++;
+    }
+    undo() { if (this.currentIndex > 0) { this.currentIndex--; return this.stack[this.currentIndex].map(b => b.clone()); } return null; }
+    redo() { if (this.currentIndex < this.stack.length - 1) { this.currentIndex++; return this.stack[this.currentIndex].map(b => b.clone()); } return null; }
+    clear() { this.stack = []; this.currentIndex = -1; }
+}
+
+class ClassManager {
+    constructor() {
+        this.defaultColors = ['#00FF00', '#FF3333', '#33CCFF', '#FFFF00', '#FF99CC', '#9933FF', '#FF9900'];
+        this.classes = [{ name: "person", color: "#00FF00", visible: true }, { name: "car", color: "#FF3333", visible: true }];
+        this.activeId = 0;
+    }
+    add() { this.classes.push({ name: `new_class`, color: this.defaultColors[this.classes.length % this.defaultColors.length], visible: true }); }
+    remove(idx) { this.classes.splice(idx, 1); if (this.activeId >= this.classes.length) this.activeId = Math.max(0, this.classes.length - 1); }
+    loadFromText(txt) { this.classes = txt.split('\n').filter(x => x.trim()).map((name, i) => ({ name: name.trim(), color: this.defaultColors[i % this.defaultColors.length], visible: true })); this.activeId = 0; }
+    get(idx) { return this.classes[idx] || null; }
+    setActive(idx) { if (idx >= 0 && idx < this.classes.length) { this.activeId = idx; return true; } return false; }
+}
+
+class CanvasEngine {
+    constructor(bgId, fgId, containerId, app) {
+        this.bgCanvas = document.getElementById(bgId); this.bgCtx = this.bgCanvas.getContext('2d', { alpha: false });
+        this.fgCanvas = document.getElementById(fgId); this.fgCtx = this.fgCanvas.getContext('2d');
+        this.container = document.getElementById(containerId);
+        this.app = app; 
+        this.scale = 1; this.panX = 0; this.panY = 0; this.image = null;
+        this.renderBgPending = false; this.renderFgPending = false; this.HANDLE_SIZE = 8;
+    }
+    
+    getMousePos(e) {
+        const rect = this.fgCanvas.getBoundingClientRect();
+        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+
+    resize() {
+        const rect = this.container.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+        this.bgCanvas.width = rect.width; this.bgCanvas.height = rect.height;
+        this.fgCanvas.width = rect.width; this.fgCanvas.height = rect.height;
+        this.fitToScreen();
+    }
+    fitToScreen() {
+        if (!this.image) return;
+        const sx = this.bgCanvas.width / this.image.width; const sy = this.bgCanvas.height / this.image.height;
+        this.scale = Math.min(sx, sy, 0.95) || 1;
+        this.panX = (this.bgCanvas.width - this.image.width * this.scale) / 2;
+        this.panY = (this.bgCanvas.height - this.image.height * this.scale) / 2;
+        this.requestRenderAll();
+    }
+    zoom(delta, mouseX, mouseY) {
+        if (!this.image) return;
+        const zoomFactor = Math.exp((delta < 0 ? 1 : -1) * 0.1);
+        this.panX = mouseX - (mouseX - this.panX) * zoomFactor; this.panY = mouseY - (mouseY - this.panY) * zoomFactor;
+        this.scale *= zoomFactor; this.requestRenderAll();
+    }
+    screenToImg(x, y) { return { x: (x - this.panX) / this.scale, y: (y - this.panY) / this.scale }; }
+    
+    requestRenderAll() {
+        if (!this.renderBgPending && this.app) {
+            this.renderBgPending = true;
+            requestAnimationFrame(() => { this.drawBackground(); this.drawForeground(); this.renderBgPending = false; this.renderFgPending = false; });
+        }
+    }
+    requestRenderForeground() {
+        if (!this.renderFgPending && this.app) {
+            this.renderFgPending = true;
+            requestAnimationFrame(() => { this.drawForeground(); this.renderFgPending = false; });
+        }
+    }
+    drawBackground() {
+        this.bgCtx.fillStyle = '#111'; this.bgCtx.fillRect(0, 0, this.bgCanvas.width, this.bgCanvas.height);
+        if (!this.image) return;
+        
+        const brightness = document.getElementById('brightnessInput').value;
+        const gamma = document.getElementById('gammaInput').value;
+        this.bgCtx.filter = `brightness(${brightness}%) contrast(${gamma}%)`;
+
+        this.bgCtx.save(); this.bgCtx.translate(this.panX, this.panY); this.bgCtx.scale(this.scale, this.scale);
+        this.bgCtx.drawImage(this.image, 0, 0); this.bgCtx.restore();
+        
+        this.bgCtx.filter = 'none'; 
+    }
+    drawForeground() {
+        this.fgCtx.clearRect(0, 0, this.fgCanvas.width, this.fgCanvas.height);
+        if (!this.image) return;
+
+        const thickness = parseInt(document.getElementById('thicknessInput').value);
+        if (thickness === -1) { this.app.updateBoxInfoDisplay(); return; }
+
+        this.fgCtx.save(); this.fgCtx.translate(this.panX, this.panY); this.fgCtx.scale(this.scale, this.scale);
+        
+        const bboxes = this.app.bboxes;
+        const selectedCount = bboxes.filter(b => b.isSelected).length;
+        const showClassName = document.getElementById('showClassName').checked;
+        
+        bboxes.forEach(box => {
+            const meta = this.app.classes.get(box.classId); if (!meta || !meta.visible) return;
+            
+            let isHovered = false;
+            if (this.app.isFKeyPressed && this.app.lastHoverHit && this.app.lastHoverHit.box === box) isHovered = true;
+
+            this.fgCtx.lineWidth = thickness === 0 ? 1 / this.scale : thickness / this.scale;
+            this.fgCtx.strokeStyle = (box.isSelected || isHovered) ? '#FFF' : meta.color;
+            if (box.isSelected || isHovered) { this.fgCtx.fillStyle = 'rgba(255, 255, 255, 0.2)'; this.fgCtx.fillRect(box.x, box.y, box.w, box.h); }
+            this.fgCtx.strokeRect(box.x, box.y, box.w, box.h);
+            
+            if (showClassName) {
+                this.fgCtx.fillStyle = this.fgCtx.strokeStyle; this.fgCtx.font = `${Math.max(12/this.scale, 10)}px Arial`;
+                const txtWidth = this.fgCtx.measureText(meta.name).width;
+                this.fgCtx.globalAlpha = 0.5; this.fgCtx.fillRect(box.x, box.y - (16/this.scale), txtWidth + (4/this.scale), 16/this.scale);
+                this.fgCtx.globalAlpha = 1.0; this.fgCtx.fillStyle = (box.isSelected || isHovered) ? '#000' : '#FFF';
+                this.fgCtx.fillText(meta.name, box.x + 2/this.scale, box.y - 4/this.scale);
+            }
+
+			if ((box.isSelected || isHovered) && this.app.isFKeyPressed) {
+                const hs = (this.HANDLE_SIZE * 1.0) / this.scale; // 포인트 크기도 살짝 줄임
+                this.fgCtx.fillStyle = '#FFF';
+                const hx = hs / 2;
+                this.fgCtx.fillRect(box.x - hx, box.y - hx, hs, hs); 
+                this.fgCtx.fillRect(box.x + box.w - hx, box.y - hx, hs, hs); 
+                this.fgCtx.fillRect(box.x - hx, box.y + box.h - hx, hs, hs); 
+                this.fgCtx.fillRect(box.x + box.w - hx, box.y + box.h - hx, hs, hs); 
+                this.fgCtx.fillRect(box.x + box.w/2 - hx, box.y - hx, hs, hs); 
+                this.fgCtx.fillRect(box.x + box.w/2 - hx, box.y + box.h - hx, hs, hs); 
+                this.fgCtx.fillRect(box.x - hx, box.y + box.h/2 - hx, hs, hs); 
+                this.fgCtx.fillRect(box.x + box.w - hx, box.y + box.h/2 - hx, hs, hs); 
+            }
+        });
+
+        if (this.app.drawState.active) {
+            this.fgCtx.lineWidth = thickness === 0 ? 1 / this.scale : thickness / this.scale; 
+            this.fgCtx.strokeStyle = '#FF0000';
+            this.fgCtx.strokeRect(Math.min(this.app.drawState.startX, this.app.drawState.curX), Math.min(this.app.drawState.startY, this.app.drawState.curY), 
+                                  Math.abs(this.app.drawState.curX - this.app.drawState.startX), Math.abs(this.app.drawState.curY - this.app.drawState.startY));
+        }
+
+        this.fgCtx.restore();
+        this.app.updateBoxInfoDisplay();
+        this.app.updateBoxCounts(); // 캔버스가 다시 그려질 때 카운트도 동기화
+    }
+}
+
+class FileManager {
+    constructor() { this.rootDirHandle = null; this.images = []; this.texts = {}; }
+
+    async scanDirectory(dirHandle, currentPath = "") {
+        let results = { images: [], texts: {}, classesFile: null };
+        for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'file') {
+                const ext = entry.name.split('.').pop().toLowerCase();
+                if (['jpg', 'jpeg', 'png', 'bmp'].includes(ext)) {
+                    results.images.push({ isFallback: false, handle: entry, parentDir: dirHandle, name: entry.name, path: currentPath + entry.name });
+                } else if (ext === 'txt') {
+                    if (entry.name.toLowerCase() === 'classes.txt') results.classesFile = await (await entry.getFile()).text();
+                    else results.texts[entry.name.substring(0, entry.name.lastIndexOf('.'))] = await (await entry.getFile()).text();
+                }
+            } else if (entry.kind === 'directory') {
+                const subResults = await this.scanDirectory(entry, currentPath + entry.name + '/');
+                results.images.push(...subResults.images); Object.assign(results.texts, subResults.texts);
+                if (subResults.classesFile) results.classesFile = subResults.classesFile;
+            }
+        }
+        return results;
+    }
+
+    async saveYolo(imgData, bboxes, imgW, imgH) {
+        if (!imgData) return false;
+        const txtName = imgData.name.substring(0, imgData.name.lastIndexOf('.')) + '.txt';
+        let out = bboxes.map(b => b.toYoloString(imgW, imgH)).filter(s => s !== null).join('\n');
+        if(out.length > 0) out += '\n';
+        this.texts[txtName.replace('.txt','')] = out;
+
+        if (!imgData.isFallback && imgData.parentDir) {
+            try {
+                const fileHandle = await imgData.parentDir.getFileHandle(txtName, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(out); await writable.close();
+                return true;
+            } catch (err) {
+                console.warn("Sandbox restricted save. Falling back to download.");
+            }
+        }
+        const blob = new Blob([out], { type: 'text/plain' }); 
+        const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = txtName;
+        document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(link.href);
+        return false;
+    }
+}
+
+class AnnotatorApp {
+    constructor() {
+        this.bboxList = []; this.clipboard = []; this.currentIndex = -1;
+        this.classes = new ClassManager(); this.history = new HistoryManager();
+        this.files = new FileManager(); 
+        this.canvas = new CanvasEngine('bg-canvas', 'fg-canvas', 'canvas-container', this);
+        
+        this.drawMode = 'drag'; 
+        this.drawState = { active: false, clickMode: false, startX: 0, startY: 0, curX: 0, curY: 0 };
+        this.interaction = { panning: false, moving: false, resizing: false, resizeHandle: null, startX: 0, startY: 0, origBox: null, origBoxes: [] };
+        
+        this.keyBuffer = { str: "", timer: null };
+        this.isFKeyPressed = false; 
+        this.isCtrlKeyPressed = false;
+        this.lastMouseImgPt = { x: 0, y: 0 };
+        this.lastHoverHit = null;
+        
+		this.shortcuts = JSON.parse(JSON.stringify({
+            save: { key: 's', ctrl: true }, openImg: { key: 'o', ctrl: true }, openLbl: { key: 'l', ctrl: true },
+            find: { key: 'f', ctrl: true }, jump: { key: 'g', ctrl: true }, prev: { key: 'a', ctrl: false }, next: { key: 'd', ctrl: false },
+            prevNoSave: { key: 'a', shift: true }, nextNoSave: { key: 'd', shift: true }, undo: { key: 'z', ctrl: true }, redo: { key: 'y', ctrl: true },
+            deleteAll: { key: 'b', ctrl: true }, 
+            copyBox: { key: 'c', ctrl: true },       
+            cutBox: { key: 'x', ctrl: true },        
+            pasteBox: { key: 'v', ctrl: true },      
+            copyScreen: { key: 'c', ctrl: true, shift: true }, 
+            screenshot: { key: 'c', ctrl: false }, toggleAllVisible: { key: '`', ctrl: true }
+        }));
+        this.initDOM();
+    }
+
+    get bboxes() { return this.bboxList; }
+
+    addLog(msg, isError = false) {
+        const logPanel = document.getElementById('logPanel');
+        const d = new Date();
+        const time = [d.getHours(), d.getMinutes(), d.getSeconds()].map(x => String(x).padStart(2, '0')).join(':');
+        const div = document.createElement('div');
+        div.className = isError ? 'log-error' : 'log-info';
+        div.textContent = `[${time}] ${msg}`;
+        logPanel.appendChild(div);
+        logPanel.scrollTop = logPanel.scrollHeight;
+    }
+
+    initDOM() {
+        document.querySelectorAll('input[name="drawMode"]').forEach(r => r.addEventListener('change', e => {
+            this.drawMode = e.target.value; this.drawState.active = false; this.drawState.clickMode = false; this.canvas.requestRenderForeground();
+        }));
+        
+        document.getElementById('btnCopyPath').addEventListener('click', () => {
+            const p = document.getElementById('currentPathDisplay').innerText.replace('경로: ', '');
+            navigator.clipboard.writeText(p).then(() => alert("경로가 클립보드에 복사되었습니다."));
+        });
+
+        document.getElementById('btnOpenDir').addEventListener('click', () => this.handleOpenDir());
+        
+        document.getElementById('btnPrev').addEventListener('click', () => this.navigate(-1));
+        document.getElementById('btnNext').addEventListener('click', () => this.navigate(1));
+        document.getElementById('btnSaveYolo').addEventListener('click', () => this.saveCurrent());
+        document.getElementById('btnScreenshot').addEventListener('click', () => this.captureScreenshot());
+        
+        document.getElementById('btnLoadClasses').addEventListener('click', () => document.getElementById('classLoaderInput').click());
+        document.getElementById('classLoaderInput').addEventListener('change', e => this.loadClassesFile(e));
+        document.getElementById('btnAddClass').addEventListener('click', () => { this.classes.add(); this.updateClassUI(); });
+        document.getElementById('classSelector').addEventListener('change', e => this.applyClassToSelection(parseInt(e.target.value)));
+        
+        document.getElementById('thicknessInput').addEventListener('change', () => this.canvas.requestRenderForeground());
+        document.getElementById('showBoxInfo').addEventListener('change', () => this.canvas.requestRenderForeground());
+        document.getElementById('showClassName').addEventListener('change', () => this.canvas.requestRenderForeground());
+        
+        const updateFilter = () => {
+            document.getElementById('brightnessVal').textContent = document.getElementById('brightnessInput').value;
+            document.getElementById('gammaVal').textContent = document.getElementById('gammaInput').value;
+            this.canvas.requestRenderAll();
+        };
+        document.getElementById('brightnessInput').addEventListener('input', updateFilter);
+        document.getElementById('gammaInput').addEventListener('input', updateFilter);
+
+        this.canvas.fgCanvas.addEventListener('mousedown', e => this.onMouseDown(e));
+        this.canvas.fgCanvas.addEventListener('mousemove', e => this.onMouseMove(e));
+        this.canvas.fgCanvas.addEventListener('mouseup', e => this.onMouseUp(e));
+        this.canvas.fgCanvas.addEventListener('wheel', e => this.onWheel(e));
+        this.canvas.fgCanvas.addEventListener('contextmenu', e => e.preventDefault());
+        
+        window.addEventListener('keydown', e => this.onKeyDown(e));
+        window.addEventListener('keyup', e => this.onKeyUp(e));
+        window.addEventListener('click', e => { if (['BUTTON', 'DIV'].includes(e.target.tagName)) this.canvas.fgCanvas.focus(); });
+        window.addEventListener('resize', () => this.canvas.resize());
+        
+        document.getElementById('btnOpenShortcuts').addEventListener('click', () => {
+            const tbody = document.getElementById('shortcutTable'); tbody.innerHTML = '';
+            for (let key in this.shortcuts) {
+                const sc = this.shortcuts[key];
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${key}</td>
+                    <td><input type="checkbox" id="ctrl_${key}" ${sc.ctrl ? 'checked' : ''}> Ctrl</td>
+                    <td><input type="checkbox" id="shift_${key}" ${sc.shift ? 'checked' : ''}> Shift</td>
+                    <td>Key: <input type="text" id="key_${key}" value="${sc.key}" style="width:30px; text-align:center;"></td>
+                `;
+                tbody.appendChild(row);
+            }
+            document.getElementById('shortcutModal').style.display = 'block';
+        });
+
+        document.getElementById('btnSaveShortcuts').addEventListener('click', () => {
+            for (let key in this.shortcuts) {
+                this.shortcuts[key].ctrl = document.getElementById(`ctrl_${key}`).checked;
+                this.shortcuts[key].shift = document.getElementById(`shift_${key}`).checked;
+                this.shortcuts[key].key = document.getElementById(`key_${key}`).value.toLowerCase();
+            }
+            document.getElementById('shortcutModal').style.display = 'none';
+            this.addLog("단축키가 적용되었습니다.");
+        });
+        
+        this.updateClassUI();
+    }
+
+    updateBoxInfoDisplay() {
+        const bar = document.getElementById('box-info-bar');
+        if (!document.getElementById('showBoxInfo').checked) {
+            bar.style.display = 'none'; return;
+        }
+        bar.style.display = 'flex';
+        
+        const sel = this.bboxes.filter(b => b.isSelected);
+        if (sel.length === 1 && this.canvas.image) {
+            const b = sel[0];
+            const imgW = this.canvas.image.width;
+            const imgH = this.canvas.image.height;
+            
+            const absX = Math.round(b.x); const absY = Math.round(b.y);
+            const absW = Math.round(b.w); const absH = Math.round(b.h);
+            
+            const cx = (b.x + b.w/2) / imgW; const cy = (b.y + b.h/2) / imgH;
+            const nw = b.w / imgW; const nh = b.h / imgH;
+
+            bar.innerHTML = `<span style="color:#0f0;">[Box Size]</span>&nbsp;${absW} x ${absH} px &nbsp;|&nbsp; ` +
+                            `<span style="color:#0f0;">[Abs Pos]</span>&nbsp;X: ${absX}, Y: ${absY} &nbsp;|&nbsp; ` +
+                            `<span style="color:#0f0;">[Rel Pos]</span>&nbsp;X: ${cx.toFixed(4)}, Y: ${cy.toFixed(4)}, W: ${nw.toFixed(4)}, H: ${nh.toFixed(4)}`;
+        } else if (sel.length > 1) {
+            bar.innerHTML = `다중 선택됨 (${sel.length}개 개체)`;
+        } else {
+            bar.innerHTML = `박스를 선택하면 정보가 표시됩니다.`;
+        }
+    }
+
+    updateClassUI() {
+        const list = document.getElementById('classList'); const sel = document.getElementById('classSelector');
+        list.innerHTML = ''; sel.innerHTML = '';
+        this.classes.classes.forEach((cls, i) => {
+            const opt = document.createElement('option'); opt.value = i; opt.textContent = `${i + 1}: ${cls.name}`; sel.appendChild(opt);
+            const row = document.createElement('div');
+            row.className = 'class-row' + (i === this.classes.activeId ? ' active-class' : '');
+            row.innerHTML = `
+                <input type="checkbox" title="보이기/숨기기" ${cls.visible ? 'checked' : ''} onchange="app.classes.get(${i}).visible = this.checked; app.canvas.requestRenderForeground();">
+                <span style="width:20px; text-align:center; font-weight:bold; font-size: 14px; color: ${i === this.classes.activeId ? '#0FF' : '#FFF'};">${i + 1}</span>
+                <input type="color" class="class-color" list="presetColors" value="${cls.color}" onchange="app.classes.get(${i}).color = this.value; app.canvas.requestRenderForeground();">
+                <input type="text" class="class-name" value="${cls.name}" onchange="app.classes.get(${i}).name = this.value; app.saveState(); app.updateClassUI();" onkeydown="if(event.key === 'Enter') this.blur();">
+                <span id="count-cls-${i}" class="class-count" title="해당 클래스 객체 개수">0</span>
+                <button class="btn-delete" title="삭제" onclick="app.removeClass(${i})">X</button>
+            `;
+            row.onclick = (e) => { if(!['INPUT', 'BUTTON'].includes(e.target.tagName)) this.applyClassToSelection(i); };
+            list.appendChild(row);
+        });
+        sel.value = this.classes.activeId; 
+        
+        const activeRow = list.querySelector('.active-class');
+        if (activeRow) activeRow.scrollIntoView({ block: 'nearest' });
+
+        this.canvas.requestRenderForeground();
+    }
+	
+	// 클래스 별 box 개수 카운트
+    updateBoxCounts() {
+        const counts = new Array(this.classes.classes.length).fill(0);
+        let total = 0;
+        
+        // 박스들을 순회하며 개수 파악
+        this.bboxes.forEach(b => {
+            if (counts[b.classId] !== undefined) {
+                counts[b.classId]++;
+                total++;
+            }
+        });
+
+        // 1. 전체 개수 렌더링
+        const title = document.getElementById('classManagerTitle');
+        if (title && title.textContent !== `2. 클래스 매니저 (총 ${total}개)`) {
+            title.textContent = `2. 클래스 매니저 (총 ${total}개)`;
+        }
+
+        // 2. 개별 클래스 개수 렌더링
+        counts.forEach((c, i) => {
+            const el = document.getElementById(`count-cls-${i}`);
+            if (el && el.textContent !== String(c)) {
+                el.textContent = String(c);
+            }
+        });
+    }
+
+    applyClassToSelection(idx) {
+        if (this.classes.setActive(idx)) {
+            const sel = this.bboxes.filter(b => b.isSelected);
+            if (sel.length > 0) { 
+                sel.forEach(b => b.classId = idx); 
+                this.saveState(); 
+                this.canvas.requestRenderForeground(); 
+            }
+            this.updateClassUI();
+			this.updateBoxCounts(); // UI가 다시 그려질 때 카운트도 갱신
+        }
+    }
+
+    removeClass(idx) {
+        if(!confirm(`[${this.classes.get(idx).name}] 클래스를 삭제하시겠습니까?`)) return;
+        this.classes.remove(idx);
+        this.bboxList = this.bboxList.filter(b => b.classId !== idx).map(b => { if(b.classId > idx) b.classId--; return b; });
+        this.updateClassUI(); this.saveState(); this.canvas.requestRenderForeground();
+    }
+
+    saveState() { this.history.save(this.bboxes); }
+
+    async handleOpenDir() {
+        if (window.showDirectoryPicker && window.isSecureContext) {
+            try {
+                this.files.rootDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                document.getElementById('currentPathDisplay').textContent = "경로: 스캔 중...";
+                const res = await this.files.scanDirectory(this.files.rootDirHandle);
+                this.files.images = res.images.sort((a,b) => a.name.localeCompare(b.name));
+                this.files.texts = res.texts;
+                if (res.classesFile) { this.classes.loadFromText(res.classesFile); this.updateClassUI(); }
+                if (this.files.images.length > 0) { this.loadIndex(0); } 
+                else document.getElementById('currentPathDisplay').textContent = `경로: 폴더에 이미지가 없습니다.`;
+            } catch (e) {
+                if (e.name !== 'AbortError') alert("폴더 접근을 취소했거나 권한이 없습니다.");
+            }
+        } else {
+            alert("이 브라우저에서는 폴더 열기(File System Access API)를 지원하지 않습니다. Chrome 계열을 사용해주세요.");
+        }
+    }
+
+    async loadClassesFile(e) {
+        const f = e.target.files[0]; if(!f) return;
+        this.classes.loadFromText(await f.text()); this.updateClassUI(); e.target.value = '';
+        this.addLog("클래스 목록 파일 불러오기 성공.");
+    }
+
+    updateFileListUI() {
+        const listDiv = document.getElementById('fileList'); listDiv.innerHTML = '';
+        const start = Math.max(0, this.currentIndex - 50); const end = Math.min(this.files.images.length, this.currentIndex + 50);
+        for (let i = start; i < end; i++) {
+            const div = document.createElement('div'); div.className = `file-item ${i === this.currentIndex ? 'active-file' : ''}`;
+            div.textContent = `[${i+1}] ${this.files.images[i].name}`;
+            div.onclick = async () => { await this.saveCurrent(); await this.loadIndex(i); };
+            listDiv.appendChild(div);
+        }
+        document.getElementById('pageInfo').textContent = `${this.currentIndex + 1} / ${this.files.images.length}`;
+        document.getElementById('jumpInput').value = this.currentIndex + 1;
+        const activeElem = listDiv.querySelector('.active-file'); if (activeElem) activeElem.scrollIntoView({ block: 'center' });
+    }
+
+    async saveCurrent() {
+        if (!this.canvas.image || this.currentIndex < 0) return;
+        const imgName = this.files.images[this.currentIndex].name;
+        const success = await this.files.saveYolo(this.files.images[this.currentIndex], this.bboxes, this.canvas.image.width, this.canvas.image.height);
+        
+        if (success) {
+            this.addLog(`[저장 성공] 파일: ${imgName}`);
+        } else {
+            this.addLog(`[다운로드 됨] 우회 저장됨: ${imgName}`, true);
+        }
+    }
+
+    async navigate(offset, save = true) {
+        if(save) await this.saveCurrent();
+        await this.loadIndex(this.currentIndex + offset);
+    }
+
+    async loadIndex(index) {
+        if (index < 0 || index >= this.files.images.length) return;
+        this.currentIndex = index; const imgData = this.files.images[index];
+        const baseName = imgData.name.substring(0, imgData.name.lastIndexOf('.'));
+        
+        document.getElementById('currentPathDisplay').textContent = `경로: /${this.files.rootDirHandle.name}/${imgData.path}`;
+        
+        if (this.canvas.image && this.canvas.image.src) URL.revokeObjectURL(this.canvas.image.src);
+        
+        const file = await imgData.handle.getFile();
+        const imgObj = new Image(); imgObj.src = URL.createObjectURL(file);
+        await new Promise(r => { imgObj.onload = r; imgObj.onerror = r; });
+        
+        this.canvas.image = imgObj; this.canvas.resize();
+
+        this.bboxList = []; this.drawState.active = false; this.drawState.clickMode = false;
+        
+        const txt = this.files.texts[baseName];
+        if (txt && txt.trim() !== "") {
+            txt.trim().split('\n').forEach(line => {
+                const parts = line.trim().split(/\s+/).map(Number);
+                if (parts.length >= 5 && !isNaN(parts[0])) {
+                    const [cls, cx, cy, w, h] = parts;
+                    this.bboxList.push(new BBox(cls, (cx - w/2)*imgObj.width, (cy - h/2)*imgObj.height, w*imgObj.width, h*imgObj.height, false));
+                }
+            });
+        }
+        
+        this.addLog(`[이동] 로드 완료: ${imgData.name} (${this.bboxList.length} 개체)`);
+        
+        this.history.clear(); this.saveState();
+        this.updateFileListUI(); this.canvas.requestRenderAll();
+    }
+
+    captureScreenshot() {
+        if (!this.canvas.image) return;
+        
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = this.canvas.image.width;
+        tempCanvas.height = this.canvas.image.height;
+        const tCtx = tempCanvas.getContext('2d');
+        
+        const brightness = document.getElementById('brightnessInput').value;
+        const gamma = document.getElementById('gammaInput').value;
+        tCtx.filter = `brightness(${brightness}%) contrast(${gamma}%)`;
+        tCtx.drawImage(this.canvas.image, 0, 0, tempCanvas.width, tempCanvas.height);
+        tCtx.filter = 'none';
+        
+        this._drawBBoxesOnContext(tCtx, tempCanvas.width);
+        
+        const dataURL = tempCanvas.toDataURL("image/png");
+        const link = document.createElement('a');
+        link.href = dataURL;
+        const imgName = `${this.files.images[this.currentIndex]?.name || 'capture'}_cap.png`;
+        link.download = imgName;
+        link.click();
+        this.addLog(`스크린샷 캡쳐 완료: ${imgName}`);
+    }
+
+    copyToClipboard() {
+        if (!this.canvas.image) return;
+
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = this.canvas.image.width;
+        tempCanvas.height = this.canvas.image.height;
+        const tCtx = tempCanvas.getContext('2d');
+
+        const brightness = document.getElementById('brightnessInput').value;
+        const gamma = document.getElementById('gammaInput').value;
+        tCtx.filter = `brightness(${brightness}%) contrast(${gamma}%)`;
+        tCtx.drawImage(this.canvas.image, 0, 0, tempCanvas.width, tempCanvas.height);
+        tCtx.filter = 'none';
+        
+        this._drawBBoxesOnContext(tCtx, tempCanvas.width);
+
+        tempCanvas.toBlob(blob => {
+            if (blob) {
+                try {
+                    navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).then(() => {
+                        this.addLog("클립보드에 이미지가 복사되었습니다.");
+                    }).catch(err => {
+                        console.error("클립보드 복사 실패:", err);
+                        this.addLog("클립보드 복사에 실패했습니다.", true);
+                    });
+                } catch(e) {
+                    this.addLog("현재 브라우저에서는 클립보드 복사를 지원하지 않습니다.", true);
+                }
+            }
+        }, "image/png");
+    }
+
+    _drawBBoxesOnContext(ctx, imgWidth) {
+        let reqThickness = parseInt(document.getElementById('thicknessInput').value);
+        if (reqThickness === -1) return;
+        
+        const baseFactor = imgWidth / 500;
+        const absLineWidth = reqThickness === 0 ? 1 : Math.max(1, reqThickness * baseFactor * 0.5); 
+        const absFontSize = Math.max(12, imgWidth / 100);
+        const showClassName = document.getElementById('showClassName').checked;
+
+        this.bboxes.forEach(box => {
+            const meta = this.classes.get(box.classId); 
+            if (!meta || !meta.visible) return;
+
+            ctx.lineWidth = absLineWidth;
+            ctx.strokeStyle = meta.color;
+            ctx.strokeRect(box.x, box.y, box.w, box.h);
+            
+            if (showClassName) {
+                ctx.font = `bold ${absFontSize}px Arial`;
+                const txtWidth = ctx.measureText(meta.name).width;
+                
+                ctx.fillStyle = meta.color;
+                ctx.globalAlpha = 0.6;
+                ctx.fillRect(box.x, box.y - absFontSize - 8, txtWidth + 8, absFontSize + 8);
+                
+                ctx.globalAlpha = 1.0;
+                ctx.fillStyle = '#000000';
+                ctx.fillText(meta.name, box.x + 4, box.y - 6);
+            }
+        });
+    }
+
+	getHitArea(imgX, imgY) {
+        if (this.isFKeyPressed) {
+            // 1. 모서리(핸들) 터치 여부를 먼저 검사 (선택 여부 상관없이)
+            for (let i = this.bboxes.length - 1; i >= 0; i--) {
+                const b = this.bboxes[i]; if (!this.classes.get(b.classId)?.visible) continue;
+                const hit = b.hitTest(imgX, imgY, (this.canvas.HANDLE_SIZE * 1.5) / this.canvas.scale, true);
+                if (hit && hit !== 'inside') return { type: 'resize', handle: hit, box: b };
+            }
+            // 2. 모서리가 아니면 내부(inside) 터치 검사
+            for (let i = this.bboxes.length - 1; i >= 0; i--) {
+                const b = this.bboxes[i]; if (!this.classes.get(b.classId)?.visible) continue;
+                if (b.hitTest(imgX, imgY, 0, false) === 'inside') return { type: 'inside', box: b };
+            }
+        } else {
+            for (let i = this.bboxes.length - 1; i >= 0; i--) {
+                const b = this.bboxes[i]; if (!this.classes.get(b.classId)?.visible) continue;
+                if (b.hitTest(imgX, imgY, 0, false) === 'inside') return { type: 'inside', box: b };
+            }
+        }
+        return null;
+    }
+
+    updateCursor() {
+        const hit = this.getHitArea(this.lastMouseImgPt.x, this.lastMouseImgPt.y);
+        
+        if (this.isFKeyPressed) {
+            if (hit && hit.type === 'resize') {
+                const h = hit.handle;
+                if (h === 'tl' || h === 'br') this.canvas.fgCanvas.style.cursor = 'nwse-resize';
+                else if (h === 'tr' || h === 'bl') this.canvas.fgCanvas.style.cursor = 'nesw-resize';
+                else if (h === 't' || h === 'b') this.canvas.fgCanvas.style.cursor = 'ns-resize';
+                else if (h === 'l' || h === 'r') this.canvas.fgCanvas.style.cursor = 'ew-resize';
+            } 
+            else if (hit && hit.type === 'inside') this.canvas.fgCanvas.style.cursor = 'move';
+            else this.canvas.fgCanvas.style.cursor = 'default';
+        } else if (this.isCtrlKeyPressed) {
+            this.canvas.fgCanvas.style.cursor = (hit && hit.type === 'inside') ? 'pointer' : 'default';
+        } else {
+            this.canvas.fgCanvas.style.cursor = 'crosshair';
+        }
+    }
+
+    onMouseDown(e) {
+        if (!this.canvas.image) return;
+        const pos = this.canvas.getMousePos(e);
+        const pt = this.canvas.screenToImg(pos.x, pos.y);
+        this.lastMouseImgPt = pt;
+        
+        if (e.button === 1) { this.interaction.panning = true; this.interaction.startX = e.clientX - this.canvas.panX; this.interaction.startY = e.clientY - this.canvas.panY; return; }
+        if (e.button === 2) {
+            if (this.drawState.clickMode) { this.drawState.clickMode = false; this.drawState.active = false; this.canvas.requestRenderForeground(); return; }
+            const hit = this.getHitArea(pt.x, pt.y);
+            if (hit && hit.type === 'inside') { this.bboxList = this.bboxes.filter(b => b !== hit.box); this.saveState(); this.canvas.requestRenderForeground(); }
+            return;
+        }
+
+        if (this.drawMode === 'click' && this.drawState.clickMode) {
+            this.drawState.curX = pt.x; this.drawState.curY = pt.y;
+            const w = Math.abs(this.drawState.curX - this.drawState.startX); const h = Math.abs(this.drawState.curY - this.drawState.startY);
+            if (w > 5 && h > 5) { 
+                this.bboxes.push(new BBox(this.classes.activeId, Math.min(this.drawState.startX, this.drawState.curX), Math.min(this.drawState.startY, this.drawState.curY), w, h, false)); 
+                this.saveState(); 
+            }
+            this.drawState.clickMode = false; this.drawState.active = false; this.canvas.requestRenderForeground(); return; 
+        }
+
+        const hit = this.getHitArea(pt.x, pt.y);
+        
+        if (e.ctrlKey) {
+            if (hit && hit.type === 'inside') {
+                hit.box.isSelected = !hit.box.isSelected; 
+                this.canvas.requestRenderForeground(); 
+            }
+            return; 
+        }
+
+        if (this.isFKeyPressed) {
+            if (hit) {
+                // 내부(inside)든 모서리(resize)든 클릭하면 해당 박스를 선택 상태로 만듦
+                if (!hit.box.isSelected) {
+                    this.bboxes.forEach(b => b.isSelected = false);
+                    hit.box.isSelected = true;
+                    this.applyClassToSelection(hit.box.classId);
+                }
+
+                // 모서리 리사이즈 혹은 이동 판단
+                const reHit = this.getHitArea(pt.x, pt.y);
+                if (reHit && reHit.type === 'resize') { 
+                    this.interaction.resizing = true; this.interaction.resizeHandle = reHit.handle; 
+                    this.interaction.origBox = reHit.box.clone(); 
+                } else {
+                    this.interaction.moving = true;
+                    this.interaction.origBoxes = this.bboxes.filter(b=>b.isSelected).map(b=>b.clone());
+                }
+                this.interaction.startX = pt.x; this.interaction.startY = pt.y; 
+                this.canvas.requestRenderForeground(); 
+            }
+            return; 
+        }
+
+        this.bboxes.forEach(b => b.isSelected = false);
+        this.drawState.startX = pt.x; this.drawState.startY = pt.y; this.drawState.curX = pt.x; this.drawState.curY = pt.y;
+        this.drawState.active = true;
+        this.drawState.clickMode = (this.drawMode === 'click');
+        this.canvas.requestRenderForeground();
+    }
+
+    onMouseMove(e) {
+        if (!this.canvas.image) return;
+        if (this.interaction.panning) { this.canvas.panX = e.clientX - this.interaction.startX; this.canvas.panY = e.clientY - this.interaction.startY; this.canvas.requestRenderAll(); return; }
+
+        const pos = this.canvas.getMousePos(e);
+        const pt = this.canvas.screenToImg(pos.x, pos.y);
+        this.lastMouseImgPt = pt;
+        this.isCtrlKeyPressed = e.ctrlKey;
+        this.drawState.curX = pt.x; this.drawState.curY = pt.y;
+
+        this.lastHoverHit = this.getHitArea(pt.x, pt.y);
+        this.updateCursor();
+
+        if (this.drawState.active) { this.canvas.requestRenderForeground(); } 
+        else if (this.interaction.moving) {
+            const dx = pt.x - this.interaction.startX; const dy = pt.y - this.interaction.startY;
+            const selBoxes = this.bboxes.filter(b => b.isSelected);
+            selBoxes.forEach((b, i) => { b.x = this.interaction.origBoxes[i].x + dx; b.y = this.interaction.origBoxes[i].y + dy; });
+            this.canvas.requestRenderForeground();
+        } 
+        else if (this.interaction.resizing) {
+            const box = this.bboxes.find(b=>b.isSelected);
+            if(box) {
+                const dx = pt.x - this.interaction.startX; const dy = pt.y - this.interaction.startY;
+                const b = this.interaction.origBox;
+                let newX = b.x, newY = b.y, newW = b.w, newH = b.h;
+
+                if (this.interaction.resizeHandle.includes('l')) { newX = b.x + dx; newW = b.w - dx; }
+                if (this.interaction.resizeHandle.includes('r')) { newW = b.w + dx; }
+                if (this.interaction.resizeHandle.includes('t')) { newY = b.y + dy; newH = b.h - dy; }
+                if (this.interaction.resizeHandle.includes('b')) { newH = b.h + dy; }
+
+                if (newW < 0) { newX += newW; newW = Math.abs(newW); }
+                if (newH < 0) { newY += newH; newH = Math.abs(newH); }
+
+                box.x = newX; box.y = newY; box.w = newW; box.h = newH;
+                this.canvas.requestRenderForeground();
+            }
+        }
+    }
+
+    onMouseUp(e) {
+        if (e.button === 2 || e.button === 1) { this.interaction.panning = false; return; }
+        
+        if (this.drawMode === 'drag' && this.drawState.active && !this.drawState.clickMode) {
+            const w = Math.abs(this.drawState.curX - this.drawState.startX); const h = Math.abs(this.drawState.curY - this.drawState.startY);
+            if (w > 5 && h > 5) { 
+                this.bboxes.push(new BBox(this.classes.activeId, Math.min(this.drawState.startX, this.drawState.curX), Math.min(this.drawState.startY, this.drawState.curY), w, h, false)); 
+                this.saveState(); 
+            }
+            this.drawState.active = false;
+        } 
+        else if (this.interaction.moving || this.interaction.resizing) { 
+            this.saveState(); 
+            if (this.isFKeyPressed) {
+                this.bboxes.forEach(b => b.isSelected = false);
+            }
+        }
+        
+        this.interaction.moving = false; this.interaction.resizing = false; this.interaction.panning = false; this.canvas.requestRenderForeground();
+    }
+
+    onWheel(e) { 
+        e.preventDefault(); 
+        const pos = this.canvas.getMousePos(e);
+        this.canvas.zoom(e.deltaY, pos.x, pos.y); 
+    }
+
+    checkSc(e, name) { const s = this.shortcuts[name]; return s && e.key.toLowerCase() === s.key && e.ctrlKey === !!s.ctrl && e.shiftKey === !!s.shift; }
+
+    onKeyDown(e) {
+        if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+        
+        // [여기에 아래 코드를 추가합니다]
+        if (e.key === 'F2') {
+            e.preventDefault();
+            const classListDiv = document.getElementById('classList');
+            const activeRow = classListDiv.children[this.classes.activeId];
+            if (activeRow) {
+                const nameInput = activeRow.querySelector('.class-name');
+                if (nameInput) {
+                    nameInput.focus();   // 입력창 활성화
+                    nameInput.select();  // 기존 이름을 바로 덮어쓸 수 있도록 블록 지정
+                }
+            }
+            return;
+        }
+
+        if (e.key === 'Escape') { if (this.drawState.clickMode) { this.drawState.clickMode = false; this.drawState.active = false; this.canvas.requestRenderForeground(); return; } }
+        if (e.key === 'Delete' || e.key === 'Backspace') { this.bboxList = this.bboxes.filter(b => !b.isSelected); this.saveState(); this.canvas.requestRenderForeground(); e.preventDefault(); return; }
+		
+		if (e.key.toLowerCase() === 'e' && !e.ctrlKey) {
+            e.preventDefault();
+            const selBoxes = this.bboxes.filter(b => b.isSelected);
+            if (selBoxes.length > 0) {
+                // 선택된 모든 박스의 classId를 현재 활성화된 activeId로 일괄 변경
+                selBoxes.forEach(b => b.classId = this.classes.activeId);
+                
+                this.saveState(); // 작업 히스토리에 저장 (Ctrl+Z 지원)
+                this.updateClassUI(); // 좌측 패널의 클래스별 객체 카운트 숫자 갱신
+                this.canvas.requestRenderForeground(); // 화면 다시 그리기
+                
+                const className = this.classes.get(this.classes.activeId).name;
+                this.addLog(`선택된 객체 ${selBoxes.length}개가 [${className}] 클래스로 변경되었습니다.`);
+            }
+            return;
+        }
+
+        if (e.key >= '0' && e.key <= '9') {
+            this.keyBuffer.str += e.key;
+            // 누르고 있는 동안의 Ctrl 상태를 기억
+            this.keyBuffer.isCtrl = this.keyBuffer.isCtrl || e.ctrlKey; 
+            
+            clearTimeout(this.keyBuffer.timer); 
+
+            // ★ Ctrl 키가 눌린 상태면 50ms, 일반 숫자 입력이면 200ms 대기 (원하시는 시간으로 조정 가능)
+            const delay = this.keyBuffer.isCtrl ? 50 : 200;
+            
+            // delay 시간 동안 추가 입력이 없으면 최종 숫자로 명령 수행
+            this.keyBuffer.timer = setTimeout(() => { 
+                let tidx = parseInt(this.keyBuffer.str) - 1; 
+                let isCtrl = this.keyBuffer.isCtrl;
+                
+                // 버퍼 초기화
+                this.keyBuffer.str = ""; 
+                this.keyBuffer.isCtrl = false;
+
+                if (tidx >= 0 && tidx < this.classes.classes.length) {
+                    if (isCtrl) { 
+                        this.classes.get(tidx).visible = !this.classes.get(tidx).visible; 
+                        this.updateClassUI(); 
+                    } 
+                    else { 
+                        this.applyClassToSelection(tidx); 
+                    } 
+                }
+            }, delay); // 여기를 고정된 숫자가 아닌 delay 변수로 변경
+            e.preventDefault(); return;
+        }
+
+        const selBoxes = this.bboxes.filter(b=>b.isSelected);
+        
+        // Ctrl+S와의 충돌 방지를 위해, 방향키/W/S는 Ctrl 및 Shift 키가 안눌렸을때만 작동하게 설정
+        if (!e.ctrlKey && !e.shiftKey && (e.key === 'w' || e.key === 'ArrowUp' || e.key === 's' || e.key === 'ArrowDown')) {
+            const dir = (e.key === 'w' || e.key === 'ArrowUp') ? -1 : 1; 
+            const skipHidden = !e.shiftKey;
+            
+            if (selBoxes.length > 0) {
+                selBoxes.forEach(b => {
+                    let cid = b.classId; let attempts = 0;
+                    while(attempts < this.classes.classes.length) {
+                        cid = (cid + dir + this.classes.classes.length) % this.classes.classes.length;
+                        if (!skipHidden || this.classes.get(cid).visible) break; attempts++;
+                    }
+                    b.classId = cid;
+                });
+                if(selBoxes.length === 1) this.applyClassToSelection(selBoxes[0].classId); 
+                else { this.saveState(); this.canvas.requestRenderForeground(); }
+            } else {
+                let cid = this.classes.activeId; let attempts = 0;
+                while(attempts < this.classes.classes.length) {
+                    cid = (cid + dir + this.classes.classes.length) % this.classes.classes.length;
+                    if (!skipHidden || this.classes.get(cid).visible) break; attempts++;
+                }
+                this.applyClassToSelection(cid);
+            }
+            e.preventDefault(); return;
+        }
+
+        if (this.checkSc(e,'openImg')) { e.preventDefault(); document.getElementById('btnOpenDir').click(); return; }
+        if (this.checkSc(e,'openLbl')) { e.preventDefault(); document.getElementById('btnLoadClasses').click(); return; }
+        if (this.checkSc(e,'save')) { e.preventDefault(); this.saveCurrent(); return; }
+        if (this.checkSc(e,'undo')) { e.preventDefault(); const s = this.history.undo(); if(s) { this.bboxList = s; this.canvas.requestRenderForeground(); } return; }
+        if (this.checkSc(e,'redo')) { e.preventDefault(); const s = this.history.redo(); if(s) { this.bboxList = s; this.canvas.requestRenderForeground(); } return; }
+        if (this.checkSc(e,'prev')) { e.preventDefault(); this.navigate(-1); return; }
+        if (this.checkSc(e,'next')) { e.preventDefault(); this.navigate(1); return; }
+        if (this.checkSc(e,'prevNoSave')) { e.preventDefault(); this.navigate(-1, false); return; }
+        if (this.checkSc(e,'nextNoSave')) { e.preventDefault(); this.navigate(1, false); return; }
+        if (this.checkSc(e,'find')) { e.preventDefault(); document.getElementById('searchInput').focus(); return; }
+        if (this.checkSc(e,'jump')) { e.preventDefault(); document.getElementById('jumpInput').focus(); return; }
+		if (this.checkSc(e,'deleteAll')) { e.preventDefault(); this.bboxList = []; this.saveState(); this.canvas.requestRenderForeground(); return; }
+        
+        if (this.checkSc(e,'copyBox')) { 
+            e.preventDefault(); 
+            const targetBoxes = selBoxes.length > 0 ? selBoxes : this.bboxes;
+            this.clipboard = targetBoxes.map(b=>b.clone()); 
+            this.addLog(`객체 ${this.clipboard.length}개 복사 완료`);
+            return; 
+        }
+        if (this.checkSc(e,'cutBox')) { 
+            e.preventDefault(); 
+            const targetBoxes = selBoxes.length > 0 ? selBoxes : this.bboxes;
+            this.clipboard = targetBoxes.map(b=>b.clone()); 
+            
+            if (selBoxes.length > 0) {
+                this.bboxList = this.bboxes.filter(b => !b.isSelected);
+            } else {
+                this.bboxList = []; 
+            }
+            this.addLog(`객체 ${this.clipboard.length}개 잘라내기 완료`);
+            this.saveState(); this.canvas.requestRenderForeground();
+            return; 
+        }
+        if (this.checkSc(e,'pasteBox')) { 
+            e.preventDefault(); 
+            if (this.clipboard.length > 0) {
+                this.bboxes.forEach(b=>b.isSelected = false);
+                this.clipboard.forEach(cb => { 
+                    const nb = cb.clone(); 
+                    nb.isSelected = true; 
+                    this.bboxList.push(nb); 
+                });
+                this.addLog(`객체 ${this.clipboard.length}개 제자리에 붙여넣기 완료`);
+                this.saveState(); this.canvas.requestRenderForeground();
+            }
+            return; 
+        }
+        
+        if (this.checkSc(e,'toggleAllVisible')) {
+            e.preventDefault(); const anyVis = this.classes.classes.some(c=>c.visible);
+            this.classes.classes.forEach(c=>c.visible = !anyVis); this.updateClassUI(); return;
+        }
+
+        if (this.checkSc(e,'copyScreen')) { e.preventDefault(); this.copyToClipboard(); return; }
+        if (this.checkSc(e,'screenshot')) { e.preventDefault(); this.captureScreenshot(); return; }
+		
+		if (e.key.toLowerCase() === 'f' && !e.ctrlKey) {
+            // 짧은 시간 안에 keydown이 다시 들어오면 keyup 타이머를 취소 (끊김 방지)
+            if (this.fKeyTimer) { clearTimeout(this.fKeyTimer); this.fKeyTimer = null; }
+            
+            if (!this.isFKeyPressed) {
+                this.isFKeyPressed = true;
+                this.updateCursor();
+                this.canvas.requestRenderForeground();
+            }
+        }
+    }
+
+    onKeyUp(e) {
+        if (e.key === 'Control') { this.isCtrlKeyPressed = false; this.updateCursor(); }
+        if (e.key.toLowerCase() === 'f') {
+            // 즉시 끄지 않고 50ms 대기 (리눅스 가짜 keyup 무시용)
+            this.fKeyTimer = setTimeout(() => {
+                this.isFKeyPressed = false;
+                this.updateCursor();
+                this.canvas.requestRenderForeground();
+                this.fKeyTimer = null;
+            }, 50);
+        }
+    }
+}
+
+const app = new AnnotatorApp();
+</script>
+</body>
+</html>

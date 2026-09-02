@@ -1,0 +1,34 @@
+# Intellivix branded ClearML webserver
+# 순정 clearml/server 위에 branding 파일을 COPY 해 덮어쓴다.
+# bind mount 없이 docker up 만으로 브랜딩 UI 가 나간다.
+#
+# 빌드: /opt/clearml/packaging/build-webserver-image.sh
+FROM clearml/server:2.3.0-705
+
+# ── nginx (캐시·no-store·cache-bust) ─────────────────────────────
+COPY nginx/default.d/cache-control.conf /etc/nginx/default.d/cache-control.conf
+COPY nginx/default.d/index-no-store.conf /etc/nginx/default.d/index-no-store.conf
+COPY nginx/default.d/cache-bust.conf /etc/nginx/default.d/cache-bust.conf
+COPY nginx/default.d/data-studio.conf /etc/nginx/default.d/data-studio.conf
+
+# ── branding (현재 rehash.map 기준, 2026-08-25) ───────────────────
+COPY branding/index.html /usr/share/nginx/html/index.html
+COPY branding/configuration.json /usr/share/nginx/html/configuration.json
+COPY branding/favicon.ico /usr/share/nginx/html/favicon.ico
+COPY branding/favicon.ico /usr/share/nginx/html/assets/favicon.ico
+COPY branding/logo.svg /usr/share/nginx/html/assets/logo.svg
+COPY branding/logo-white.svg /usr/share/nginx/html/assets/logo-white.svg
+COPY branding/small-logo.svg /usr/share/nginx/html/assets/small-logo.svg
+COPY branding/small-logo-white.svg /usr/share/nginx/html/assets/small-logo-white.svg
+COPY branding/c-logomark.svg /usr/share/nginx/html/app/webapp-common/assets/icons/c-logomark.svg
+
+COPY branding/main-7G55WGQS.js /usr/share/nginx/html/main-7G55WGQS.js
+COPY branding/main-7G55WGQS.js /usr/share/nginx/html/main-MY7YNF44.js
+COPY branding/chunk-IYOYC2IM.js /usr/share/nginx/html/chunk-IYOYC2IM.js
+COPY branding/chunk-IYOYC2IM.js /usr/share/nginx/html/chunk-TIXM7K2O.js
+COPY branding/chunk-JY2UDATB.js /usr/share/nginx/html/chunk-JY2UDATB.js
+COPY branding/chunk-XWAPV62X.js /usr/share/nginx/html/chunk-XWAPV62X.js
+COPY branding/global-styles-4XJIR6WU.css /usr/share/nginx/html/global-styles-4XJIR6WU.css
+COPY branding/global-styles-4XJIR6WU.css /usr/share/nginx/html/global-styles-R7PPIOS4.css
+COPY branding/c-logomark-WXISJBXP.svg /usr/share/nginx/html/media/c-logomark-WXISJBXP.svg
+COPY branding/c-logomark-WXISJBXP.svg /usr/share/nginx/html/media/c-logomark-FR6YLILN.svg

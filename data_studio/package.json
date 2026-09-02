@@ -1,0 +1,84 @@
+{
+  "name": "intellivix-data-studio-local",
+  "version": "1.2.0",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5175 && cross-env ELECTRON_DEV=1 electron .\"",
+    "clean:release": "node scripts/clean-release.cjs",
+    "electron:build": "node scripts/clean-release.cjs && vite build && electron-builder --win",
+    "electron:build:win-linux": "node scripts/clean-release.cjs && vite build && electron-builder --win --linux",
+    "electron:build:linux": "node scripts/clean-release.cjs && vite build && electron-builder --linux",
+    "electron:build:all": "node scripts/clean-release.cjs && vite build && electron-builder",
+    "electron": "electron .",
+    "server": "node server/index.js",
+    "test:server": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.22.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "typescript": "^5.5.3",
+    "vite": "^5.4.1",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.intellivix.datastudio.local",
+    "productName": "Intellivix Data Studio (Local)",
+    "executableName": "intellivix-data-studio-local",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "scripts/ocr_worker.py",
+      "public/logo.ico"
+    ],
+    "asarUnpack": [
+      "scripts/ocr_worker.py"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "public/logo.ico"
+    },
+    "nsis": {
+      "installerIcon": "public/logo.ico",
+      "uninstallerIcon": "public/logo.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Graphics",
+      "synopsis": "Local YOLO / VLM labeling and review (Electron)",
+      "maintainer": "Intellivix <local@localhost>"
+    }
+  }
+}

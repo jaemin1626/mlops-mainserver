@@ -1,0 +1,5 @@
+clearml>=1.14.0
+prometheus_client>=0.20.0
+requests>=2.31.0
+python-dateutil>=2.9.0
+schedule>=1.2.0
