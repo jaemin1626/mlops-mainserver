@@ -1,147 +1,187 @@
-# ClearML MLOps Stack
+# ClearML MLOps — 82 서버 운영 가이드
 
-Intellivix 브랜딩이 적용된 ClearML 서버 + Data Studio + Grafana 모니터링입니다.
-
----
-
-## 구성
-
-### ClearML 스택 (`docker-compose.yml`)
-
-| 서비스 | 포트 | 설명 |
-|--------|------|------|
-| webserver | 8080 | ClearML UI, Data Studio 프록시 |
-| apiserver | 8008 | REST API |
-| fileserver | 8081 | 아티팩트 업/다운로드 |
-| data-studio | (8080 하위) | `/data-studio/` |
-| model-eval-console | 8090 | 모델 평가 콘솔 |
-| mongo, elasticsearch, redis | 내부 | ClearML 백엔드 |
-
-### 모니터링 스택 (`monitoring/`, 선택)
-
-ClearML UI(8080)와 **별개**입니다. Grafana 운영 대시보드용입니다.
-
-```
-ClearML API (8008)
-    → clearml-exporter (9090)
-    → Prometheus (9091)
-    → Grafana (3000)
-```
-
-| 서비스 | 포트 |
-|--------|------|
-| Grafana | 3000 |
-| Prometheus | 9091 |
-| clearml-exporter | 9090 |
-
-아키텍처 상세: [`monitoring/architecture.md`](monitoring/architecture.md)
+Intellivix 브랜딩 ClearML + Data Studio + (선택) Grafana MLOps 현황판입니다.
 
 ---
 
-## 디렉터리
+## 1. 빠른 시작 (82 서버)
 
-```
-clearml/
-├── .env                 # 통합 설정 (유일한 설정 파일)
-├── .env.example         # 템플릿 (Git 추적)
-├── start.sh             # 전체 기동 (마운트 + compose)
-├── compose.sh           # docker compose 래퍼
-├── monitoring-compose.sh
-├── docker-compose.yml
-├── config/              # apiserver.conf 등 (gen-auth.sh 생성)
-├── branding/            # Intellivix UI 커스터마이징
-├── mount/               # Dataset NFS 마운트 스크립트
-├── monitoring/          # exporter, grafana, prometheus
-├── model_eval_console/
-└── packaging/           # pack.sh / install.sh (오프라인 이관)
-```
+### 1-1. 사전 조건
 
----
+- Docker, Docker Compose v2 설치
+- 코드 위치: `/opt/clearml`
+- Data Studio Dataset: 168 NFS 마운트 가능해야 함
 
-## 설치 · 기동
-
-### 최초 설정
+### 1-2. 환경 세팅 순서
 
 ```bash
 cd /opt/clearml
+
+# Step 1 — 설정 파일 준비
 cp .env.example .env
-vi .env
-```
+vi .env                    # IP, NFS, (선택) Grafana 비밀번호
 
-`.env`에서 꼭 확인할 항목:
-
-- `CLEARML_SERVER_IP` — 이 서버 IP (예: 172.16.4.82)
-- `TRAINING_SERVER_IP`, `TRAINING_DATASET_PATH`, `HOST_DATASET_PATH` — Dataset NFS
-- `GRAFANA_ADMIN_PASSWORD` — Grafana 비밀번호 (모니터링 사용 시)
-
-### 한 번에 기동
-
-```bash
+# Step 2 — 전체 기동
 bash start.sh
 ```
 
-`start.sh` 순서:
+**Step 2 (`start.sh`) 내부 순서:**
 
-1. Dataset NFS 마운트 (`mount/scripts/mount_dataset.sh`)
-2. `.env` 준비 (`gen-secrets.sh`, `gen-auth.sh`, `apply-env.sh`)
-3. `./compose.sh up -d`
-4. Data Studio 재기동 (마운트 경로 반영)
+```
+① Dataset NFS 마운트     mount/scripts/mount_dataset.sh
+② .env 자동 보완         gen-secrets.sh → gen-auth.sh → apply-env.sh
+③ ClearML 기동           compose.sh up -d
+④ Data Studio 재기동     마운트 경로 반영
+```
 
-Dataset 마운트 없이 ClearML만:
+마운트 없이 ClearML만:
 
 ```bash
 bash start.sh --no-mount
 ```
 
-### 개별 제어
+**Step 3 — 접속 확인**
+
+| 서비스 | URL |
+|--------|-----|
+| ClearML UI | http://172.16.4.82:8080 (`.env`의 IP) |
+| Data Studio | http://172.16.4.82:8080/data-studio/ |
+| 모델 평가 콘솔 | http://172.16.4.82:8090 |
+
+로그인: `.env` 의 `CLEARML_LOGIN_USER` / `CLEARML_LOGIN_PASSWORD`  
+(비워 두었으면 `start.sh` 가 생성 — 터미널 출력 또는 `grep CLEARML_LOGIN_ .env` 로 확인)
+
+**Step 4 — (선택) Grafana**
+
+MLOps **현황·버전별 성능 요약**용입니다. epoch별 train/valid loss 곡선은 ClearML UI에서 봅니다.
 
 ```bash
+# .env 에 GRAFANA_ADMIN_PASSWORD 설정
+./monitoring-compose.sh up -d
+
+# ClearML UI에서 API 키 발급 → .env 에 CLEARML_ACCESS_KEY/SECRET_KEY 입력 후
+./monitoring-compose.sh up -d --force-recreate clearml-exporter
+```
+
+Grafana: http://172.16.4.82:3000 (`.env`의 IP)
+
+### 1-3. 이후 재기동
+
+```bash
+cd /opt/clearml
+./compose.sh up -d                    # ClearML만
+./monitoring-compose.sh up -d         # Grafana만 (선택)
+bash start.sh                         # 처음부터 (마운트 포함)
+```
+
+IP·포트·NFS 경로를 바꾼 경우:
+
+```bash
+vi .env
+bash packaging/apply-env.sh --restart
+```
+
+---
+
+## 2. 수정해야 할 파일
+
+### ✅ 사용자가 수정하는 파일 — `.env` 하나
+
+| 파일 | 역할 |
+|------|------|
+| **`/opt/clearml/.env`** | **유일한 사용자 설정 파일** (IP, NFS, 비밀번호, API 키) |
+| `/opt/clearml/.env.example` | 템플릿 (복사용, 직접 수정 X) |
+
+#### `.env`에서 직접 입력하는 항목
+
+| 구분 | 키 | 필수 | 설명 |
+|------|-----|------|------|
+| 서버 주소 | `CLEARML_SERVER_IP` | ✅ | 82 IP (예: 172.16.4.82) |
+| 포트 | `CLEARML_WEB_PORT`, `CLEARML_API_PORT`, `CLEARML_FILES_PORT` | ✅ | 기본 8080 / 8008 / 8081 |
+| 모니터링 IP | `MONITORING_SERVER_IP` | Grafana 사용 시 | 보통 `CLEARML_SERVER_IP` 와 동일 |
+| Dataset NFS | `TRAINING_SERVER_IP`, `TRAINING_SERVER_USER`, `TRAINING_DATASET_PATH` | Data Studio | 168 쪽 경로 |
+| Dataset 로컬 | `HOST_DATASET_PATH` | Data Studio | 82 마운트 지점 |
+| UI 로그인 | `CLEARML_LOGIN_USER`, `CLEARML_LOGIN_PASSWORD` | 선택 | 비우면 자동 생성 |
+| Grafana | `GRAFANA_ADMIN_PASSWORD` | Grafana 사용 시 | |
+| Grafana exporter | `CLEARML_ACCESS_KEY`, `CLEARML_SECRET_KEY` | Grafana 사용 시 | ClearML UI에서 발급 |
+
+#### `.env`에서 건드리지 않는 항목 (자동)
+
+| 키 | 누가 채움 |
+|----|-----------|
+| `CLEARML_TOKEN_SECRET`, `CLEARML_SESSION_SECRET` | `gen-secrets.sh` |
+| `CLEARML_HOST_IP`, `CLEARML_WEB_HOST`, `CLEARML_API_HOST` 등 | `apply-env.sh` |
+
+### ❌ 직접 수정하지 않는 파일
+
+| 파일 | 설명 |
+|------|------|
+| `config/apiserver.conf` | `gen-auth.sh` 가 `.env` 기준으로 생성 |
+| `monitoring/docker-compose.yml` | 기본값 그대로 사용 |
+| `docker-compose.yml` | 기본값 그대로 사용 |
+| `monitoring/data/` | Grafana·Prometheus 런타임 데이터 |
+
+### 168 학습 서버
+
+82의 `.env`를 **사용하지 않습니다.**  
+168 로컬 `~/clearml.conf` (또는 프로젝트 `clearml.conf`)로 82 API에 연결합니다.
+
+---
+
+## 3. 구성 요약
+
+### ClearML 스택 (`compose.sh`)
+
+| 서비스 | 포트 | 용도 |
+|--------|------|------|
+| webserver | 8080 | ClearML UI, Data Studio |
+| apiserver | 8008 | API (학습·exporter 연결) |
+| fileserver | 8081 | 아티팩트 |
+| data-studio | 8080 하위 | `/data-studio/` |
+| model-eval-console | 8090 | 모델 평가 |
+
+### Grafana (선택, `monitoring-compose.sh`)
+
+| 보여 주는 것 | 보여 주지 않는 것 |
+|-------------|------------------|
+| 학습 횟수, 소요 시간, 진행 중 epoch | epoch별 train/valid **loss 곡선** |
+| 버전별 mAP, Valid mA (최종값) | ClearML Scalars와 동일한 상세 차트 |
+| 데이터셋·태깅·프로젝트 현황 | |
+
+상세: [`monitoring/architecture.md`](monitoring/architecture.md)
+
+---
+
+## 4. Dataset NFS (168 → 82)
+
+`.env` 의 NFS 설정을 따릅니다.
+
+```bash
+bash mount/scripts/mount_dataset.sh mount
+bash mount/scripts/mount_dataset.sh status
+bash mount/scripts/mount_dataset.sh umount
+```
+
+---
+
+## 5. 자주 쓰는 명령
+
+```bash
+cd /opt/clearml
+
 ./compose.sh ps
 ./compose.sh logs -f webserver
 ./compose.sh up -d --force-recreate apiserver
 
-./monitoring-compose.sh up -d
 ./monitoring-compose.sh ps
+./monitoring-compose.sh logs -f clearml-exporter
 ```
 
 ---
 
-## `.env` 키 정리
+## 6. 문제 해결
 
-| 키 | 누가 채움 | 용도 |
-|----|-----------|------|
-| `CLEARML_SERVER_IP`, 포트 | 사용자 | 서버 주소 |
-| `CLEARML_TOKEN_SECRET`, `CLEARML_SESSION_SECRET` | `gen-secrets.sh` | JWT 서명 (서버 고유) |
-| `CLEARML_LOGIN_USER/PASSWORD` | `gen-auth.sh` | 웹 UI 로그인 |
-| `CLEARML_ACCESS_KEY`, `CLEARML_SECRET_KEY` | **수동** (ClearML UI) | Grafana exporter |
-| `CLEARML_AGENT_*` | 선택 | agent-services 컨테이너 |
-| `CLEARML_HOST_IP`, `CLEARML_WEB_HOST` 등 | `apply-env.sh` | IP에서 자동 계산 (직접 수정 X) |
-
-ClearML UI → **Settings → Workspace → Create new credentials** 에서 API 키 발급 후 `.env`에 넣고:
-
-```bash
-./monitoring-compose.sh up -d --force-recreate clearml-exporter
-```
-
----
-
-## Dataset NFS (168 → 82)
-
-168 학습 서버의 Dataset 폴더를 82에 마운트해 Data Studio에서 사용합니다.
-
-```bash
-bash mount/scripts/mount_dataset.sh mount    # 마운트
-bash mount/scripts/mount_dataset.sh status   # 상태 확인
-bash mount/scripts/mount_dataset.sh umount   # 해제
-```
-
-경로는 `.env`의 `TRAINING_*`, `HOST_DATASET_PATH` 를 따릅니다.
-
----
-
-## Grafana 문제 해결
-
-Grafana/Prometheus가 `permission denied`로 재시작 반복되면:
+**Grafana/Prometheus 재시작 반복 (permission denied)**
 
 ```bash
 docker run --rm -v /opt/clearml/monitoring/data/grafana:/d alpine chown -R 472:472 /d
@@ -149,27 +189,23 @@ docker run --rm -v /opt/clearml/monitoring/data/prometheus:/d alpine chown -R 65
 ./monitoring-compose.sh up -d --force-recreate
 ```
 
-대시보드가 비어 있으면 exporter 로그에서 `401` 확인 → `.env`의 `CLEARML_ACCESS_KEY` / `CLEARML_SECRET_KEY` 점검.
+**Grafana 대시board 비어 있음**
+
+- exporter 로그: `docker logs clearml-exporter`
+- `401` → `.env` 의 `CLEARML_ACCESS_KEY` / `CLEARML_SECRET_KEY` 확인
+
+**Dataset 마운트 실패**
+
+- `.env` 의 `TRAINING_SERVER_IP`, `TRAINING_DATASET_PATH` 확인
+- 168 NFS export 및 방화벽 확인
 
 ---
 
-## 오프라인 이관
-
-다른 서버로 통째로 옮길 때:
+## 7. 다른 서버로 이관
 
 ```bash
-bash packaging/pack.sh              # 번들 생성
-# 대상 서버에서
-bash packaging/install.sh
+bash packaging/pack.sh
+# 대상 서버에서 packaging/install.sh
 ```
 
 상세: [`packaging/README.md`](packaging/README.md)
-
----
-
-## Git에 포함되지 않는 것
-
-- `.env` — 서버별 비밀값
-- `data/`, `logs/`, `agent/` — 런타임 데이터
-- `config/apiserver.conf` — gen-auth.sh 생성
-- `monitoring/data/` — Grafana DB, Prometheus TSDB
