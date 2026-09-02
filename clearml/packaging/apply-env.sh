@@ -82,7 +82,7 @@ ok "파생 값 반영 완료 (자격증명은 그대로)"
 if [ "$DO_RESTART" = 1 ]; then
     step "스택 재기동"
     (cd "$CLEARML_DIR" && ./compose.sh up -d --no-build)
-    (cd "$CLEARML_DIR" && ./monitoring-compose.sh up -d --no-build)
+    (cd "$CLEARML_DIR" && ./monitoring-compose.sh up -d --force-recreate --no-build)
     ok "완료"
 else
     echo "  재기동: packaging/apply-env.sh --restart"

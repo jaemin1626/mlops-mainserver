@@ -21,7 +21,7 @@ cd /opt/clearml
 cp .env.example .env
 vi .env                    # IP, NFS, (선택) Grafana 비밀번호
 
-# Step 2 — 전체 기동
+# Step 2 — 전체 기동 (.env 수정 후 이것만 실행)
 bash start.sh
 ```
 
@@ -32,12 +32,21 @@ bash start.sh
 ② .env 자동 보완         gen-secrets.sh → gen-auth.sh → apply-env.sh
 ③ ClearML 기동           compose.sh up -d
 ④ Data Studio 재기동     마운트 경로 반영
+⑤ Grafana 모니터링     monitoring-compose.sh up -d --force-recreate
 ```
+
+`.env` 수정 후 **`bash start.sh` 만 실행**하면 ClearML·Grafana 모두 `.env` 가 반영됩니다.
 
 마운트 없이 ClearML만:
 
 ```bash
 bash start.sh --no-mount
+```
+
+Grafana 안 쓸 때:
+
+```bash
+bash start.sh --no-monitoring
 ```
 
 **Step 3 — 접속 확인**
@@ -51,34 +60,19 @@ bash start.sh --no-mount
 로그인: `.env` 의 `CLEARML_LOGIN_USER` / `CLEARML_LOGIN_PASSWORD`  
 (비워 두었으면 `start.sh` 가 생성 — 터미널 출력 또는 `grep CLEARML_LOGIN_ .env` 로 확인)
 
-**Step 4 — (선택) Grafana**
+**Step 4 — Grafana API 키 (처음 한 번)**
 
-MLOps **현황·버전별 성능 요약**용입니다. epoch별 train/valid loss 곡선은 ClearML UI에서 봅니다.
+ClearML UI → Settings → Create credentials → `.env` 에 `CLEARML_ACCESS_KEY` / `CLEARML_SECRET_KEY` 입력 후 **`bash start.sh`** 다시 실행.
 
-```bash
-# .env 에 GRAFANA_ADMIN_PASSWORD 설정
-./monitoring-compose.sh up -d
+Grafana: http://172.16.4.82:3000/d/clearml-mlops-main
 
-# ClearML UI에서 API 키 발급 → .env 에 CLEARML_ACCESS_KEY/SECRET_KEY 입력 후
-./monitoring-compose.sh up -d --force-recreate clearml-exporter
-```
-
-Grafana: http://172.16.4.82:3000 (`.env`의 IP)
-
-### 1-3. 이후 재기동
+### 1-3. 이후 `.env` 수정 후
 
 ```bash
 cd /opt/clearml
-./compose.sh up -d                    # ClearML만
-./monitoring-compose.sh up -d         # Grafana만 (선택)
-bash start.sh                         # 처음부터 (마운트 포함)
-```
-
-IP·포트·NFS 경로를 바꾼 경우:
-
-```bash
 vi .env
-bash packaging/apply-env.sh --restart
+bash start.sh                    # 전체 반영 (Grafana 포함)
+bash packaging/apply-env.sh --restart   # IP만 바꿀 때
 ```
 
 ---

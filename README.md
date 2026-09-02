@@ -11,7 +11,7 @@ Intellivix MLOps 메인 서버입니다. **82(ai-server)** 에 ClearML, Data Stu
 
 ---
 
-## 1. 빠른 시작 (82 서버)
+## 1. 실행 준비
 
 ### 사전 조건
 
@@ -39,22 +39,16 @@ bash start.sh
 | 2 | 서명 키·로그인 계정 생성 + URL 파생 값 반영 |
 | 3 | ClearML docker compose 기동 |
 | 4 | Data Studio 재기동 (마운트 경로 반영) |
+| 5 | Grafana 모니터링 (`.env` 반영) |
 
-Dataset 마운트 없이 ClearML만:
+`.env` 수정 후 **`bash start.sh`** 만 실행하면 됩니다.
 
-```bash
-bash start.sh --no-mount
-```
+Dataset 마운트 없이: `bash start.sh --no-mount`  
+Grafana 안 쓸 때: `bash start.sh --no-monitoring`
 
-### (선택) Grafana MLOps 현황판
+### Grafana API 키
 
-ClearML UI와 **별개**입니다. 팀 단위 학습 현황·버전별 mAP 등을 볼 때만 켭니다.
-
-```bash
-cd /opt/clearml
-# .env 에 GRAFANA_ADMIN_PASSWORD, CLEARML_ACCESS_KEY 설정 후
-./monitoring-compose.sh up -d
-```
+ClearML UI에서 credentials 발급 → `.env`에 넣기 → **`bash start.sh`** 재실행.
 
 > train/valid loss 곡선은 **ClearML UI(8080)** 에서 봅니다. Grafana는 요약·현황용입니다.
 
@@ -107,7 +101,7 @@ bash /opt/clearml/packaging/apply-env.sh --restart
 1. http://172.16.4.82:8080 접속
 2. 프로필 → **Settings → Workspace → Create new credentials**
 3. `.env` 에 `CLEARML_ACCESS_KEY`, `CLEARML_SECRET_KEY` 입력
-4. `./monitoring-compose.sh up -d --force-recreate clearml-exporter`
+4. **`bash start.sh`** 재실행
 
 ### 168 학습 서버
 
