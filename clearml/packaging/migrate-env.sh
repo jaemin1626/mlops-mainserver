@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 예전 servers.conf / dataset-mount.env / secrets/.env / monitoring/.env → .env 통합
+# 예전 servers.conf / dataset-mount.env / monitoring/.env → .env 통합
 #
 #   bash packaging/migrate-env.sh
 set -euo pipefail
@@ -37,9 +37,7 @@ fi
 echo "통합 중..."
 merge_file "${CLEARML_DIR}/servers.conf"
 merge_file "${CLEARML_DIR}/mount/config/dataset-mount.env"
-merge_file "${CLEARML_DIR}/secrets/.env"
-merge_file "${CLEARML_DIR}/clearml-monitoring/monitoring-deploy/.env"
-merge_file "/opt/clearml-monitoring/monitoring-deploy/.env"
+merge_file "${CLEARML_DIR}/monitoring/.env"
 
 bash "${CLEARML_DIR}/packaging/apply-env.sh"
 echo "완료: ${ENV_FILE}"

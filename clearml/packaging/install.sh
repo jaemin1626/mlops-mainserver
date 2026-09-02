@@ -14,9 +14,9 @@ set -euo pipefail
 BUNDLE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 CLEARML_DIR="${CLEARML_DIR:-/opt/clearml}"
-MONITORING_ROOT="${MONITORING_ROOT:-/opt/clearml-monitoring}"
-MONITORING_DIR="${MONITORING_DIR:-${MONITORING_ROOT}/monitoring-deploy}"
+MONITORING_DIR="${MONITORING_DIR:-${CLEARML_DIR}/monitoring}"
 DATA_STUDIO_DIR="${DATA_STUDIO_DIR:-/opt/data_studio}"
+ENV_FILE="${CLEARML_DIR}/.env"
 
 CLEARML_PROJECT="${CLEARML_PROJECT:-clearml}"
 MONITORING_PROJECT="${MONITORING_PROJECT:-monitoring-deploy}"
@@ -62,7 +62,7 @@ docker info >/dev/null 2>&1 || die "docker 데몬에 접근할 수 없습니다"
 docker compose version >/dev/null 2>&1 || die "docker compose v2 없음"
 [ -f "${BUNDLE_DIR}/MANIFEST.txt" ] || die "MANIFEST.txt 없음 — 번들 디렉터리에서 실행하세요"
 # root 권한 작업은 /opt 를 마운트한 헬퍼 컨테이너로 처리하므로 경로가 /opt 밑이어야 한다
-for d in "$CLEARML_DIR" "$MONITORING_ROOT" "$DATA_STUDIO_DIR"; do
+for d in "$CLEARML_DIR" "$MONITORING_DIR" "$DATA_STUDIO_DIR"; do
     case "$d" in /opt/*) ;; *) die "설치 경로는 /opt 하위여야 합니다: ${d}" ;; esac
 done
 ok "번들 ${BUNDLE_ID}"
@@ -124,7 +124,7 @@ else
         ok "${dest}"
     }
     restore opt-clearml.tar.gz            "$CLEARML_DIR"
-    restore opt-clearml-monitoring.tar.gz "$MONITORING_ROOT"
+    restore opt-clearml-monitoring.tar.gz "$MONITORING_DIR"
     restore opt-data_studio.tar.gz        "$DATA_STUDIO_DIR"
 
     # 고정 태그가 박힌 compose 로 교체 (원본은 .orig 로 보관)
@@ -164,8 +164,8 @@ bash "${BUNDLE_DIR}/lib/check_mounts.sh" \
 
 for f in "${CLEARML_DIR}/branding/index.html" \
          "${CLEARML_DIR}/nginx/default.d/data-studio.conf" \
-         "${MONITORING_DIR}/config/grafana/dashboards/clearml-mlops.json" \
-         "${MONITORING_DIR}/.env"; do
+         "${CLEARML_DIR}/.env.example" \
+         "${MONITORING_DIR}/config/grafana/dashboards/clearml-mlops.json"; do
     [ -e "$f" ] && ok "$f" || warn "$f 없음"
 done
 
@@ -197,9 +197,17 @@ else
         done'
     ok "데이터 디렉터리 확인 완료 (+ 새로 만듦, = 기존 유지)"
 
-    # ClearML 기본 JWT 서명 키는 GitHub 에 공개돼 있어서 서버끼리 토큰이 통용된다.
-    # 서버마다 다른 키를 넣어야 낡은 토큰이 401 로 떨어지고 로그인 화면이 정상으로 뜬다.
+    ENV_FILE="${CLEARML_DIR}/.env"
+    if [ ! -f "$ENV_FILE" ] && [ -f "${CLEARML_DIR}/.env.example" ]; then
+        cp "${CLEARML_DIR}/.env.example" "$ENV_FILE"
+        chmod 600 "$ENV_FILE"
+        ok ".env 생성 (.env.example 복사)"
+    fi
+
+    # JWT 서명 키 · 로그인 계정 · 파생 URL — 통합 .env 기준
     bash "${BUNDLE_DIR}/gen-secrets.sh" || die "서명 키 생성 실패"
+    bash "${BUNDLE_DIR}/gen-auth.sh"   || die "로그인 설정 실패"
+    bash "${CLEARML_DIR}/packaging/apply-env.sh" || die "apply-env 실패"
 fi
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -247,36 +255,33 @@ if [ "$DO_START" = 0 ]; then
     warn "건너뜀"
     echo
     echo "  수동 기동:"
-    echo "    cd ${CLEARML_DIR}    && ./compose.sh up -d --no-build"
-    echo "    cd ${MONITORING_DIR} && docker compose -p ${MONITORING_PROJECT} up -d --no-build"
+    echo "    cd ${CLEARML_DIR} && ./compose.sh up -d --no-build"
+    echo "    cd ${CLEARML_DIR} && ./monitoring-compose.sh up -d --no-build"
 else
     # --no-build: 번들에 담긴 이미지를 쓰고, 없으면 조용히 재빌드하는 대신 실패시킨다
-    (cd "$CLEARML_DIR"    && ./compose.sh up -d --no-build)
-    (cd "$MONITORING_DIR" && docker compose -p "$MONITORING_PROJECT" up -d --no-build)
+    (cd "$CLEARML_DIR" && ./compose.sh up -d --no-build)
+    (cd "$CLEARML_DIR" && ./monitoring-compose.sh up -d --no-build)
     sleep 20
     docker compose -p "$CLEARML_PROJECT" ps 2>/dev/null || (cd "$CLEARML_DIR" && ./compose.sh ps)
-    docker compose -p "$MONITORING_PROJECT" ps
+    docker compose -p "$MONITORING_PROJECT" ps 2>/dev/null || true
 fi
 
-step "서버 주소 확인"
-# 주소는 servers.conf 한 곳에서 관리한다. 여기 값이 원본 서버 그대로면 알려준다.
-SERVERS_CONF="${CLEARML_DIR}/servers.conf"
-if [ -f "$SERVERS_CONF" ]; then
-    CONF_IP=$(sed -n 's/^CLEARML_SERVER_IP=//p' "$SERVERS_CONF" | head -1)
-    HOST_IPS=$(hostname -I 2>/dev/null || echo "")
-    if [ -n "$CONF_IP" ] && ! grep -qw "$CONF_IP" <<<"$HOST_IPS"; then
-        warn "servers.conf 의 CLEARML_SERVER_IP 가 ${CONF_IP} 로, 이 서버(${HOST_IPS% }) 주소가 아닙니다."
-        echo "         주소는 이 파일 하나만 고치면 됩니다:"
-        echo "           ${SERVERS_CONF}"
-        echo "         고친 뒤 반영:"
-        echo "           ${CLEARML_DIR}/packaging/apply-servers.sh --restart"
-    else
-        ok "servers.conf 의 주소가 이 서버와 일치합니다 (${CONF_IP})"
-    fi
+ENV_FILE="${CLEARML_DIR}/.env"
+step "설정 확인 (.env)"
+if [ ! -f "$ENV_FILE" ]; then
+    warn "${ENV_FILE} 없음"
+    echo "         cp ${CLEARML_DIR}/.env.example ${ENV_FILE}"
+    echo "         vi ${ENV_FILE}  후  packaging/apply-env.sh --restart"
 else
-    warn "${SERVERS_CONF} 없음 — 주소를 각 .env 에서 직접 고쳐야 합니다"
+    CONF_IP=$(sed -n 's/^CLEARML_SERVER_IP=//p' "$ENV_FILE" | head -1)
+    HOST_IPS=$(hostname -I 2>/dev/null || echo "")
+    if [ -n "$CONF_IP" ] && [ -n "$HOST_IPS" ] && ! grep -qw "$CONF_IP" <<<"$HOST_IPS"; then
+        warn ".env 의 CLEARML_SERVER_IP=${CONF_IP} — 이 서버(${HOST_IPS% }) 주소와 다를 수 있습니다"
+        echo "         vi ${ENV_FILE}  후  ${CLEARML_DIR}/packaging/apply-env.sh --restart"
+    elif [ -n "$CONF_IP" ]; then
+        ok "CLEARML_SERVER_IP=${CONF_IP}"
+    fi
 fi
-[ -f "${CLEARML_DIR}/.env" ] || warn "${CLEARML_DIR}/.env 없음 — agent-services 자격증명·호스트 주소가 비어 있습니다"
 
 step "서명 키 확인"
 # 기본 키를 그대로 쓰면 다른 서버가 발급한 토큰이 서명 검증을 통과해서
@@ -288,24 +293,21 @@ else
     echo "         ${CLEARML_DIR}/packaging/gen-secrets.sh"
 fi
 
-# 번들에는 GitLab 토큰이 비워진 채로 들어온다
-if grep -q '^GITLAB_TOKEN=$' "${MONITORING_DIR}/.env" 2>/dev/null; then
-    warn "GITLAB_TOKEN 이 비어 있습니다 (번들에서 제외됨)."
-    echo "         GitLab 커밋 현황 패널만 빈 채로 뜨고 나머지 지표는 정상입니다."
-    echo "         필요하면 ${MONITORING_DIR}/.env 에 토큰을 넣고 exporter 를 재시작하세요."
+# 번들에 .env 가 없으므로 GitLab 토큰 등은 대상 서버에서 입력
+if [ -f "$ENV_FILE" ] && ! grep -qE '^CLEARML_ACCESS_KEY=.' "$ENV_FILE" 2>/dev/null; then
+    warn "CLEARML_ACCESS_KEY 가 비어 있습니다 — monitoring exporter 가 ClearML API 를 못 읽을 수 있습니다."
 fi
 
 step "완료"
 if [ "$WITH_DATA" = 0 ]; then
     echo "  빈 ClearML 로 기동했습니다. 다음 순서로 마무리하세요:"
-    echo "    1. ${SERVERS_CONF} 에서 서버 주소 수정 후"
-    echo "         ${CLEARML_DIR}/packaging/apply-servers.sh --restart"
-    echo "    2. http://<이 서버>:8080 접속 → 첫 사용자 생성"
+    echo "    1. vi ${ENV_FILE}  (IP · NFS · Grafana · API 키)"
+    echo "         ${CLEARML_DIR}/packaging/apply-env.sh --restart"
+    echo "    2. http://<이 서버>:8080 접속 → 로그인"
     echo "       (예전에 접속한 적 있으면 시크릿 창으로 열 것)"
     echo "    3. 프로필 → Settings → Workspace → Create new credentials"
-    echo "    4. 발급한 키를 ${MONITORING_DIR}/.env 의"
-    echo "       CLEARML_ACCESS_KEY / CLEARML_SECRET_KEY 에 넣고 exporter 재시작:"
-    echo "         cd ${MONITORING_DIR} && docker compose -p ${MONITORING_PROJECT} up -d --no-build clearml-exporter"
+    echo "    4. 발급한 키를 ${ENV_FILE} 의 CLEARML_ACCESS_KEY / CLEARML_SECRET_KEY 에 넣고:"
+    echo "         cd ${CLEARML_DIR} && ./monitoring-compose.sh up -d --no-build clearml-exporter"
 else
     FS="${CLEARML_DIR}/data/fileserver"
     if [ -z "$(ls -A "$FS" 2>/dev/null)" ]; then

@@ -1,15 +1,17 @@
 # ── clearml (runtime / secrets) ──
-clearml/secrets/
+clearml/.env
+clearml/.env.*
+!clearml/.env.example
 clearml/data/
 clearml/logs/
 clearml/agent/
 clearml/config/apiserver.conf
 
 # ── monitoring (runtime) ──
-clearml/clearml-monitoring/monitoring-deploy/data/
-clearml/clearml-monitoring/monitoring-deploy/.env
-clearml/clearml-monitoring/monitoring-deploy/.env.*
-!clearml/clearml-monitoring/monitoring-deploy/.env.example
+clearml/monitoring/data/
+clearml/monitoring/.env
+clearml/monitoring/.env.*
+!clearml/monitoring/.env.example
 
 # ── data_studio (build) ──
 data_studio/node_modules/

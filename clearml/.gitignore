@@ -1,16 +1,11 @@
-# secrets & runtime data — never commit
+# runtime data — never commit
 .env
 .env.*
 !.env.example
-secrets/
 config/apiserver.conf
 agent/
 data/
 logs/
-*.bak*
-*.bak-*
-.env
-.env.*
 
 # local overrides
 __pycache__/
@@ -19,13 +14,13 @@ __pycache__/
 *.tmp
 .DS_Store
 
-# monitoring stack runtime (monorepo: clearml-monitoring/monitoring-deploy/)
-clearml-monitoring/monitoring-deploy/data/
-clearml-monitoring/monitoring-deploy/.env
-clearml-monitoring/monitoring-deploy/.env.*
-!clearml-monitoring/monitoring-deploy/.env.example
-clearml-monitoring/monitoring-deploy/*.orig
-clearml-monitoring/monitoring-deploy/docker-compose.yml.orig
+# monitoring stack runtime
+monitoring/data/
+monitoring/.env
+monitoring/.env.*
+!monitoring/.env.example
+monitoring/*.orig
+monitoring/docker-compose.yml.orig
 
 # data-studio runtime / build artifacts
 data-studio/node_modules/

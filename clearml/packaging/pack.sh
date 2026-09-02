@@ -23,8 +23,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 CLEARML_DIR="${CLEARML_DIR:-/opt/clearml}"
-MONITORING_ROOT="${MONITORING_ROOT:-/opt/clearml-monitoring}"
-MONITORING_DIR="${MONITORING_DIR:-${MONITORING_ROOT}/monitoring-deploy}"
+MONITORING_DIR="${MONITORING_DIR:-${CLEARML_DIR}/monitoring}"
 DATA_STUDIO_DIR="${DATA_STUDIO_DIR:-/opt/data_studio}"
 
 CLEARML_PROJECT="${CLEARML_PROJECT:-clearml}"
@@ -240,36 +239,31 @@ bash "${SCRIPT_DIR}/lib/check_mounts.sh" \
 if [ "$WITH_CONFIG" = 1 ]; then
 step "4/5 호스트 설정 · 소스 아카이브"
 
-# .env 는 서버 고유값(서명 키·주소)이라 번들에 넣지 않는다.
-# 대상 서버에서 gen-secrets.sh 와 apply-servers.sh 가 새로 만든다.
+# .env · apiserver.conf 는 서버 고유값이라 번들에 넣지 않는다.
+# 대상 서버에서 cp .env.example .env → gen-secrets.sh · gen-auth.sh · apply-env.sh
 tar_as_root "$CLEARML_DIR" "${BUNDLE}/config/opt-clearml.tar.gz" \
-    ./data ./logs ./agent ./secrets "*.tar" "*.swp" "*.swo" "*.bak-*"
-ok "$(du -h "${BUNDLE}/config/opt-clearml.tar.gz" | cut -f1)  /opt/clearml (servers.conf, branding, nginx, config, model_eval_console, 스크립트)"
-echo "         secrets/ 제외 — 서명 키가 서버 밖으로 나가지 않습니다"
+    ./data ./logs ./agent ./.env ./config/apiserver.conf \
+    "*.tar" "*.swp" "*.swo" "*.bak-*"
+ok "$(du -h "${BUNDLE}/config/opt-clearml.tar.gz" | cut -f1)  /opt/clearml (branding, nginx, model_eval_console, 스크립트)"
+echo "         .env · config/apiserver.conf 제외"
 
-# 모니터링 설정은 .env 에 자격증명이 들어 있어서 원본을 그대로 담지 않는다.
-# 실행 중인 설정을 건드리면 안 되므로 스테이징 폴더로 복사한 뒤 거기서만 지운다.
-# (data/ 를 뺀 나머지는 전부 일반 계정 소유라 root 권한이 필요 없다)
+# 모니터링 설정 — data/ · .env 제외 (통합 .env 는 clearml/.env)
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
-rsync -a --exclude 'monitoring-deploy/data' "${MONITORING_ROOT}/" "${STAGE}/"
+rsync -a --exclude 'data' --exclude '.env' \
+    "${MONITORING_DIR}/" "${STAGE}/"
 
-MON_ENV="${STAGE}/monitoring-deploy/.env"
-if [ -f "$MON_ENV" ]; then
-    # 원본은 참고용으로 번들 바깥에 남긴다
-    SECRETS_DIR="${OUT_ROOT}/secrets-backup-${BUNDLE_ID}"
+SECRETS_DIR="${OUT_ROOT}/secrets-backup-${BUNDLE_ID}"
+if [ -f "${CLEARML_DIR}/.env" ]; then
     mkdir -p "$SECRETS_DIR" && chmod 700 "$SECRETS_DIR"
-    cp "${MONITORING_ROOT}/monitoring-deploy/.env" "${SECRETS_DIR}/monitoring.env"
-    chmod 600 "${SECRETS_DIR}/monitoring.env"
-
-    sed -i 's|^GITLAB_TOKEN=.*|GITLAB_TOKEN=|' "$MON_ENV"
-    warn "번들의 .env 에서 GITLAB_TOKEN 을 비웠습니다 (원본 파일은 그대로)"
-    echo "         원본 보관: ${SECRETS_DIR}/monitoring.env  ← 번들에 포함되지 않음"
+    cp "${CLEARML_DIR}/.env" "${SECRETS_DIR}/mlops.env"
+    chmod 600 "${SECRETS_DIR}/mlops.env"
+    warn "원본 .env 백업: ${SECRETS_DIR}/mlops.env  ← 번들에 포함되지 않음"
 fi
 
 tar -C "$STAGE" --numeric-owner -cf - . | $COMPRESS > "${BUNDLE}/config/opt-clearml-monitoring.tar.gz"
 rm -rf "$STAGE"; trap - EXIT
-ok "$(du -h "${BUNDLE}/config/opt-clearml-monitoring.tar.gz" | cut -f1)  ${MONITORING_ROOT} (grafana, prometheus, exporter)"
+ok "$(du -h "${BUNDLE}/config/opt-clearml-monitoring.tar.gz" | cut -f1)  ${MONITORING_DIR} (grafana, prometheus, exporter)"
 
 tar_as_root "$DATA_STUDIO_DIR" "${BUNDLE}/config/opt-data_studio.tar.gz" \
     ./node_modules ./dist ./release ./.git ./poly_test
@@ -292,7 +286,8 @@ step "5/5 데이터 백업"
         warn "정합성 있는 백업을 위해 스택을 내립니다"
         step_mongo
         (cd "$CLEARML_DIR" && ./compose.sh stop)
-        (cd "$MONITORING_DIR" && docker compose -p "$MONITORING_PROJECT" stop)
+        (cd "$CLEARML_DIR" && ./monitoring-compose.sh stop 2>/dev/null) \
+            || (cd "$MONITORING_DIR" && docker compose -p "$MONITORING_PROJECT" stop)
     else
         warn "스택이 떠 있는 상태로 백업합니다 (--stop 권장)"
         step_mongo
@@ -319,7 +314,8 @@ step "5/5 데이터 백업"
 
     if [ "$STOP_STACK" = 1 ]; then
         (cd "$CLEARML_DIR" && ./compose.sh start)
-        (cd "$MONITORING_DIR" && docker compose -p "$MONITORING_PROJECT" start)
+        (cd "$CLEARML_DIR" && ./monitoring-compose.sh start 2>/dev/null) \
+            || (cd "$MONITORING_DIR" && docker compose -p "$MONITORING_PROJECT" start)
         ok "스택 재시작"
     fi
 else
@@ -330,8 +326,9 @@ fi
 step "매니페스트 생성"
 cp "${SCRIPT_DIR}/install.sh" "${BUNDLE}/install.sh"
 cp "${SCRIPT_DIR}/gen-secrets.sh" "${BUNDLE}/gen-secrets.sh"
+cp "${SCRIPT_DIR}/gen-auth.sh" "${BUNDLE}/gen-auth.sh"
 mkdir -p "${BUNDLE}/lib" && cp -r "${SCRIPT_DIR}/lib/." "${BUNDLE}/lib/"
-chmod +x "${BUNDLE}/install.sh" "${BUNDLE}/gen-secrets.sh"
+chmod +x "${BUNDLE}/install.sh" "${BUNDLE}/gen-secrets.sh" "${BUNDLE}/gen-auth.sh"
 
 FS_SIZE=$(docker run --rm -v "${CLEARML_DIR}/data/fileserver:/f:ro" "$HELPER_IMAGE" du -sh /f 2>/dev/null | cut -f1 || echo "?")
 
@@ -369,5 +366,6 @@ else
     echo "  브랜딩·Data Studio·Grafana 대시보드·exporter 만 그대로 올라갑니다."
 fi
 echo
-echo "  주소   : 대상 서버에서 /opt/clearml/servers.conf 한 파일만 고친 뒤"
-echo "           /opt/clearml/packaging/apply-servers.sh --restart"
+echo "  설정   : 대상 서버에서  cp /opt/clearml/.env.example /opt/clearml/.env"
+echo "           vi /opt/clearml/.env  (IP · NFS · API 키 · 비밀번호)"
+echo "           /opt/clearml/packaging/apply-env.sh --restart"

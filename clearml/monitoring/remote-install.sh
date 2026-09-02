@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────
 # 원격 서버에서 직접 실행하는 설치 스크립트
-# 원격 서버에 이 파일과 monitoring-deploy/ 폴더를 복사 후 실행
+# 원격 서버에 /opt/clearml (monitoring 포함) 복사 후 실행
 #
 # 사용법:
-#   1. scp -r clearml-monitoring/ user@<서버>:/opt/clearml/
-#      (또는 git clone mlops-mainserver → /opt/clearml)
+#   1. git clone mlops-mainserver → /opt (또는 scp -r clearml/ user@<서버>:/opt/)
 #   2. ssh user@<서버>
-#   3. cd /opt/clearml/clearml-monitoring/monitoring-deploy && ./remote-install.sh
+#   3. cd /opt/clearml && ./monitoring-compose.sh up -d
+#      (또는 cd /opt/clearml/monitoring && ./remote-install.sh)
 #
 # 서버 주소는 /opt/clearml/servers.conf 한 곳에서 관리한다.
 # ──────────────────────────────────────────────────────────────

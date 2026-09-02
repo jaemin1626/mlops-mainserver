@@ -88,7 +88,6 @@ if [ -n "$PASS" ] && [ "$ROTATE" = 0 ] && [ -z "${CLEARML_LOGIN_PASSWORD:-}" ]; 
     ok "기존 CLEARML_LOGIN_PASSWORD 유지"
 else
     PASS="${CLEARML_LOGIN_PASSWORD:-$(gen_password)}"
-    [ -f "$ENV_FILE" ] && cp -a "$ENV_FILE" "${ENV_FILE}.bak-$(date +%Y%m%d-%H%M%S)"
     mkdir -p "$(dirname "$ENV_FILE")"
     python3 "${SCRIPT_DIR}/lib/set_env.py" "$ENV_FILE" \
         "CLEARML_LOGIN_USER=${USER}" \

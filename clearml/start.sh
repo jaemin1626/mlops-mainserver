@@ -52,7 +52,7 @@ else
     bash "${ROOT}/mount/scripts/mount_dataset.sh" mount || true
 fi
 
-# ── 2/4 .env (secrets · 주소 · 파생 URL) ─────────────────────────────────
+# ── 2/4 .env (서명 키 · 주소 · 파생 URL) ─────────────────────────────────
 step "2/4 환경 설정 (.env)"
 if [ ! -f "${ROOT}/.env" ]; then
     if [ -f "${ROOT}/.env.example" ]; then

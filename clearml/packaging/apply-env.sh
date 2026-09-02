@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLEARML_DIR="${CLEARML_DIR:-/opt/clearml}"
 ENV_FILE="${CLEARML_ENV_FILE:-${CLEARML_DIR}/.env}"
-MONITORING_DIR="${MONITORING_DIR:-/opt/clearml-monitoring/monitoring-deploy}"
+MONITORING_DIR="${MONITORING_DIR:-${CLEARML_DIR}/monitoring}"
 CLEARML_PROJECT="${CLEARML_PROJECT:-clearml}"
 MONITORING_PROJECT="${MONITORING_PROJECT:-monitoring-deploy}"
 
@@ -65,8 +65,6 @@ if [ "$CHECK_ONLY" = 1 ]; then
     exit 0
 fi
 
-cp -a "$ENV_FILE" "${ENV_FILE}.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
-
 python3 "${SCRIPT_DIR}/lib/set_env.py" "$ENV_FILE" \
     "CLEARML_HOST_IP=${CLEARML_SERVER_IP}" \
     "CLEARML_WEB_HOST=${WEB_URL}" \
@@ -76,10 +74,7 @@ python3 "${SCRIPT_DIR}/lib/set_env.py" "$ENV_FILE" \
     "SERVER_HOST=${MONITORING_SERVER_IP}" \
     "EXPORTER_PORT=${EXPORTER_PORT:-9090}" \
     "PROMETHEUS_PORT=${PROMETHEUS_PORT:-9091}" \
-    "GRAFANA_PORT=${GRAFANA_PORT:-3000}" \
-    "TAGGING_TOOL_URL=${TAGGING_TOOL_URL:-}" \
-    "GITLAB_URL=${GITLAB_URL:-}" \
-    "GITLAB_PROJECT_IDS=${GITLAB_PROJECT_IDS:-}"
+    "GRAFANA_PORT=${GRAFANA_PORT:-3000}"
 
 chmod 600 "$ENV_FILE"
 ok "파생 값 반영 완료 (자격증명은 그대로)"

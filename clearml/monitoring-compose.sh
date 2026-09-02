@@ -5,7 +5,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${CLEARML_ENV_FILE:-${ROOT}/.env}"
-MON_DIR="${MONITORING_DIR:-${ROOT}/clearml-monitoring/monitoring-deploy}"
+MON_DIR="${MONITORING_DIR:-${ROOT}/monitoring}"
 PROJECT="${MONITORING_PROJECT:-monitoring-deploy}"
 
 if [ ! -f "$ENV_FILE" ]; then

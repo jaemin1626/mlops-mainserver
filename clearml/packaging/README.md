@@ -47,11 +47,11 @@ UI 는 순정 ClearML 로 보인다. "기존 clearml 만 남았다" 는 증상�
 | Data Studio 리버스 프록시 설정 | `/opt/clearml/nginx/default.d/` bind mount | ✗ |
 | Data Studio 앱 | `/opt/data_studio` **build context** | △ 이미지는 되지만 이름이 어긋나면 재빌드됨 |
 | Model Eval Console | `/opt/clearml/model_eval_console` build context | △ 동일 |
-| ClearML Prometheus Exporter | `monitoring-deploy/clearml-exporter/exporter.py` build context | △ 동일 |
-| Grafana 대시보드 정의 | `monitoring-deploy/config/grafana/dashboards/` bind mount | ✗ |
-| Grafana UI 에서 수정한 대시보드·계정 | `monitoring-deploy/data/grafana/` (SQLite) | ✗ |
-| Prometheus 스크레이프 설정 | `monitoring-deploy/config/prometheus/` bind mount | ✗ |
-| API 키·서버 주소 | `monitoring-deploy/.env` | ✗ |
+| ClearML Prometheus Exporter | `monitoring/clearml-exporter/exporter.py` build context | △ 동일 |
+| Grafana 대시보드 정의 | `monitoring/config/grafana/dashboards/` bind mount | ✗ |
+| Grafana UI 에서 수정한 대시보드·계정 | `monitoring/data/grafana/` (SQLite) | ✗ |
+| Prometheus 스크레이프 설정 | `monitoring/config/prometheus/` bind mount | ✗ |
+| API 키·서버 주소 | `/opt/clearml/.env` (통합) | ✗ |
 | 프로젝트·태스크·사용자 | MongoDB (`/opt/clearml/data/mongo_4`) | ✗ |
 | 실험 지표·로그 | Elasticsearch (`/opt/clearml/data/elastic_7`) | ✗ |
 | 아티팩트·모델 파일 (444GB) | `/opt/clearml/data/fileserver` | ✗ |
@@ -63,7 +63,7 @@ Compose 는 이미지 이름을 `<프로젝트명>-<서비스명>` 으로 자동
 **compose 파일이 있는 디렉터리 이름**이다.
 
 - `/opt/clearml` → 프로젝트 `clearml` → `clearml-data-studio`
-- `/opt/clearml-monitoring/monitoring-deploy` → 프로젝트 `monitoring-deploy` → `monitoring-deploy-clearml-exporter`
+- `/opt/clearml/monitoring` → 프로젝트 `monitoring-deploy` → `monitoring-deploy-clearml-exporter`
 
 대상 서버에서 디렉터리 위치가 조금만 달라도 이름이 어긋나고, compose 는 저장해 간 이미지를
 무시한 채 **조용히 재빌드**한다. 오프라인 서버면 그대로 실패한다.
@@ -178,11 +178,11 @@ cd /opt/clearml/packaging
 
 - 번들의 `.env` : `GITLAB_TOKEN=` (빈 값)
 - 원본 그대로의 사본 : `<출력경로>/secrets-backup-<ID>/monitoring.env` (권한 600, **번들 바깥**)
-- 실행 중인 `/opt/clearml-monitoring/monitoring-deploy/.env` : 변경 없음
+- 실행 중인 `/opt/clearml/.env` : 변경 없음 (모니터링도 동일 파일 사용)
 
 `GITLAB_TOKEN` 은 exporter 에서 커밋 현황 지표에만 쓰인다.
 
-```1022:1023:/opt/clearml-monitoring/monitoring-deploy/clearml-exporter/exporter.py
+```1022:1023:/opt/clearml/monitoring/clearml-exporter/exporter.py
     # ── GitLab 커밋 현황 ─────────────────────────────────────
     if GITLAB_URL and GITLAB_TOKEN:
 ```
@@ -250,11 +250,11 @@ cd /opt/clearml-bundle-<ID>
 
 1. `http://<대상서버>:8080` 접속 → 첫 사용자 생성
 2. 프로필 → Settings → Workspace → Create new credentials
-3. 발급한 키를 `monitoring-deploy/.env` 의 `CLEARML_ACCESS_KEY` / `CLEARML_SECRET_KEY` 에 넣고 exporter 재시작
+3. 발급한 키를 `/opt/clearml/.env` 의 `CLEARML_ACCESS_KEY` / `CLEARML_SECRET_KEY` 에 넣고 exporter 재시작
 
 ```bash
-cd /opt/clearml-monitoring/monitoring-deploy
-docker compose -p monitoring-deploy up -d --no-build clearml-exporter
+cd /opt/clearml
+./monitoring-compose.sh up -d --no-build clearml-exporter
 ```
 
 ### 설치 후 반드시 손봐야 할 것 — 서버 주소
@@ -282,20 +282,11 @@ vi /opt/clearml/servers.conf                       # CLEARML_SERVER_IP 등 수�
 
 | 파일 | 방식 | 반영되는 항목 |
 |---|---|---|
-| `/opt/clearml/secrets/.env` | 뿌림 | `CLEARML_HOST_IP`, `CLEARML_WEB_HOST`, `CLEARML_FILES_HOST` |
-| `monitoring-deploy/.env` | 뿌림 | `SERVER_HOST`, `CLEARML_API_HOST`, 포트 3종, `TAGGING_TOOL_URL`, `GITLAB_URL`, `GITLAB_PROJECT_IDS` |
-| `monitoring-deploy/remote-install.sh` | 직접 읽음 | 안내 출력에 쓰는 Grafana·Prometheus 주소 |
+| `/opt/clearml/.env` | `apply-env.sh` | `CLEARML_HOST_IP`, `CLEARML_WEB_HOST`, `CLEARML_FILES_HOST`, `CLEARML_API_HOST`, `SERVER_HOST`, 포트 등 |
+| `monitoring/remote-install.sh` | 직접 읽음 | 안내 출력에 쓰는 Grafana·Prometheus 주소 |
 
-`.env` 두 개는 docker compose 가 변수 치환에 쓰는 파일이라 다른 파일을 참조할 수 없다.
-그래서 이 둘만 "뿌리는" 방식이고, 나머지는 실행할 때 `servers.conf` 를 읽는다.
-
-동작상 알아둘 것 두 가지.
-
-- `MONITORING_SERVER_IP` 가 `CLEARML_SERVER_IP` 와 같으면 exporter 의 `CLEARML_API_HOST` 를
-  `http://host.docker.internal:8008` 로 넣는다. 같은 호스트일 때 방화벽이나 바인딩 주소에
-  안 걸리는 쪽이다. 서버가 다르면 실제 IP URL 을 넣는다.
-- `.env` 를 덮어쓰기 전에 `.env.bak-<타임스탬프>` 로 백업하고, **주소 키만** 고친다.
-  `CLEARML_ACCESS_KEY`, `GRAFANA_ADMIN_PASSWORD`, `GITLAB_TOKEN` 같은 자격증명은 건드리지 않는다.
+`.env` 한 파일에 주소·자격증명을 모두 두고, `apply-env.sh` 가 **파생 URL만** 갱신한다.
+`CLEARML_ACCESS_KEY`, `GRAFANA_ADMIN_PASSWORD`, `GITLAB_TOKEN` 같은 자격증명은 건드리지 않는다.
 
 바꾸기 전에 지금 값을 보고 싶으면:
 
@@ -464,8 +455,8 @@ docker compose -p clearml restart elasticsearch apiserver
 데이터 디렉터리 소유권 문제다.
 
 ```bash
-sudo chown -R 472:472   /opt/clearml-monitoring/monitoring-deploy/data/grafana
-sudo chown -R 65534:65534 /opt/clearml-monitoring/monitoring-deploy/data/prometheus
+sudo chown -R 472:472   /opt/clearml/monitoring/data/grafana
+sudo chown -R 65534:65534 /opt/clearml/monitoring/data/prometheus
 ```
 
 **설치 중 `ID 불일치` 로 전부 실패한다**

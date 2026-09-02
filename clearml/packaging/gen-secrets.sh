@@ -93,9 +93,8 @@ if [ "${#UPDATES[@]}" -eq 0 ]; then
     exit 0
 fi
 
-[ -f "$ENV_FILE" ] && cp -a "$ENV_FILE" "${ENV_FILE}.bak-$(date +%Y%m%d-%H%M%S)"
-python3 "${SCRIPT_DIR}/lib/set_env.py" "$ENV_FILE" "${UPDATES[@]}" >/dev/null
 mkdir -p "$(dirname "$ENV_FILE")"
+python3 "${SCRIPT_DIR}/lib/set_env.py" "$ENV_FILE" "${UPDATES[@]}" >/dev/null
 chmod 600 "$ENV_FILE"
 ok "${ENV_FILE} (권한 600)"
 
