@@ -4,20 +4,14 @@ Intellivix MLOps 메인 서버입니다. **82(ai-server)** 에 ClearML, Data Stu
 
 | 서버 | IP | 역할 |
 |------|-----|------|
-| **82 (ai-server)** | 172.16.4.82 | ClearML UI, Data Studio, Grafana |
-| **168 (학습)** | 172.16.4.168 | 학습 Job 실행, Dataset NFS 제공 |
+| **MLOPs서버** | - | ClearML UI, Data Studio, Grafana |
+| **학습 서버** | - | 학습 Job 실행, Dataset NFS 제공 |
 
 상세 운영 가이드: [`clearml/README.md`](clearml/README.md)
 
 ---
 
 ## 1. 실행 준비
-
-### 사전 조건
-
-- Docker + Docker Compose v2
-- 82 서버에 `/opt/clearml` 배포됨
-- 168 → 82 NFS 접근 가능 (Data Studio Dataset 사용 시)
 
 ### 환경 세팅 순서
 
@@ -82,7 +76,7 @@ bash /opt/clearml/packaging/apply-env.sh --restart
 |------|-----------|------|------|
 | ClearML 서버 IP | `CLEARML_SERVER_IP` | ✅ | 82 IP |
 | 웹/API/파일 포트 | `CLEARML_WEB_PORT` 등 | ✅ | 기본 8080/8008/8081 |
-| Dataset NFS (168) | `TRAINING_SERVER_IP`, `TRAINING_DATASET_PATH` | Data Studio용 | 168 경로 |
+| Dataset NFS    | `TRAINING_SERVER_IP`, `TRAINING_DATASET_PATH` | Data Studio용 | 168 경로 |
 | Dataset 로컬 마운트 | `HOST_DATASET_PATH` | Data Studio용 | 기본 `/opt/clearml/data/datasets` |
 | ClearML UI 로그인 | `CLEARML_LOGIN_USER`, `CLEARML_LOGIN_PASSWORD` | 선택 | 비우면 `start.sh` 가 자동 생성 |
 | Grafana 비밀번호 | `GRAFANA_ADMIN_PASSWORD` | Grafana 사용 시 | |
@@ -98,16 +92,10 @@ bash /opt/clearml/packaging/apply-env.sh --restart
 
 ### Grafana API 키 발급 (선택)
 
-1. http://172.16.4.82:8080 접속
+1. http://{MLOps IP}:8080 접속
 2. 프로필 → **Settings → Workspace → Create new credentials**
 3. `.env` 에 `CLEARML_ACCESS_KEY`, `CLEARML_SECRET_KEY` 입력
 4. **`bash start.sh`** 재실행
-
-### 168 학습 서버
-
-82의 `.env`와 **무관**합니다. 168에는 **`clearml.conf`** 로 82 API(`8008`)에 연결합니다.
-
----
 
 ## 디렉터리
 
