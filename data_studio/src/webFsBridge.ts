@@ -18,13 +18,14 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-function pickFolder(initialPath?: string): Promise<string | null> {
+function pickFolder(initialPath?: string, pickerRoot?: string): Promise<string | null> {
   return new Promise((resolve) => {
     window.dispatchEvent(
       new CustomEvent('data-studio:pick-folder', {
         detail: {
           mode: 'dir',
           initialPath,
+          pickerRoot,
           done: (path: string | null) => resolve(path),
         },
       })
@@ -61,12 +62,14 @@ function pickSaveName(directory: string, defaultName?: string): Promise<string |
   });
 }
 
-function pickLabel(): Promise<string | null> {
+function pickLabel(initialPath?: string, pickerRoot?: string): Promise<string | null> {
   return new Promise((resolve) => {
     window.dispatchEvent(
       new CustomEvent('data-studio:pick-label', {
         detail: {
           mode: 'label',
+          initialPath,
+          pickerRoot,
           done: (path: string | null) => resolve(path),
         },
       })
@@ -81,8 +84,8 @@ export function installWebFsBridge(): void {
   let workspaceRoot: string | null = null;
 
   window.electron = {
-    openFolderDialog: (opts) => pickFolder(opts?.initialPath),
-    openLabelFileDialog: () => pickLabel(),
+    openFolderDialog: (opts) => pickFolder(opts?.initialPath, opts?.pickerRoot),
+    openLabelFileDialog: (opts) => pickLabel(opts?.initialPath, opts?.pickerRoot),
     setWorkspaceRoot: async (path) => {
       workspaceRoot = path;
       setWebWorkspaceRoot(path);
@@ -93,9 +96,18 @@ export function installWebFsBridge(): void {
       return true;
     },
     getMediaBaseRoot: async () => getWebMediaBaseRoot(),
+    scanYoloDashboard: async (detectorRoot) => {
+      return apiJson(`${API}/dashboard/yolo-summary?root=${encodeURIComponent(detectorRoot || '/data/datasets/detector')}`);
+    },
     scanFolder: async (dirPath) => {
       const data = await apiJson<{ items: OfflineImageItem[] }>(
         `${API}/fs/images?path=${encodeURIComponent(dirPath)}`
+      );
+      return data.items;
+    },
+    scanMediaFolder: async (dirPath) => {
+      const data = await apiJson<{ items: OfflineImageItem[] }>(
+        `${API}/fs/media?path=${encodeURIComponent(dirPath)}`
       );
       return data.items;
     },

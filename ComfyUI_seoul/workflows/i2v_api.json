@@ -1,0 +1,755 @@
+{
+  "100": {
+    "inputs": {
+      "sigmas": "0.909375, 0.725, 0.421875, 0.0"
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "ManualSigmas"
+    }
+  },
+  "103": {
+    "inputs": {
+      "cfg": 1.1,
+      "model": [
+        "342",
+        0
+      ],
+      "positive": [
+        "107",
+        0
+      ],
+      "negative": [
+        "107",
+        1
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG 가이드"
+    }
+  },
+  "107": {
+    "inputs": {
+      "frame_rate": [
+        "285",
+        0
+      ],
+      "positive": [
+        "121",
+        0
+      ],
+      "negative": [
+        "110",
+        0
+      ]
+    },
+    "class_type": "LTXVConditioning",
+    "_meta": {
+      "title": "LTXV 조건 설정"
+    }
+  },
+  "108": {
+    "inputs": {
+      "width": [
+        "163",
+        0
+      ],
+      "height": [
+        "163",
+        1
+      ],
+      "length": [
+        "287",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLTXVLatentVideo",
+    "_meta": {
+      "title": "빈 잠재 비디오 (LTXV)"
+    }
+  },
+  "109": {
+    "inputs": {
+      "video_latent": [
+        "161",
+        0
+      ],
+      "audio_latent": [
+        "199",
+        0
+      ]
+    },
+    "class_type": "LTXVConcatAVLatent",
+    "_meta": {
+      "title": "LTXVConcatAVLatent"
+    }
+  },
+  "110": {
+    "inputs": {
+      "text": "Large flames, rapidly growing fire, widely spreading fire, explosions, forceful flame bursts, excessive smoke, thick black smoke, smoke covering the entire frame, obscured background equipment, camera movement, scene transitions, lighting changes, exposure changes, and any darkening of the image are all prohibited.",
+      "clip": [
+        "346",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP 텍스트 인코딩 (프롬프트)"
+    }
+  },
+  "113": {
+    "inputs": {
+      "noise": [
+        "115",
+        0
+      ],
+      "guider": [
+        "129",
+        0
+      ],
+      "sampler": [
+        "137",
+        0
+      ],
+      "sigmas": [
+        "206",
+        0
+      ],
+      "latent_image": [
+        "109",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "고급 사용자 정의 샘플러"
+    }
+  },
+  "114": {
+    "inputs": {
+      "noise_seed": 308978829579045
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "무작위 노이즈"
+    }
+  },
+  "115": {
+    "inputs": {
+      "noise_seed": 80990313390284
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "무작위 노이즈"
+    }
+  },
+  "116": {
+    "inputs": {
+      "av_latent": [
+        "113",
+        0
+      ]
+    },
+    "class_type": "LTXVSeparateAVLatent",
+    "_meta": {
+      "title": "LTXVSeparateAVLatent"
+    }
+  },
+  "117": {
+    "inputs": {
+      "video_latent": [
+        "160",
+        0
+      ],
+      "audio_latent": [
+        "116",
+        1
+      ]
+    },
+    "class_type": "LTXVConcatAVLatent",
+    "_meta": {
+      "title": "LTXVConcatAVLatent"
+    }
+  },
+  "118": {
+    "inputs": {
+      "samples": [
+        "116",
+        0
+      ],
+      "upscale_model": [
+        "189",
+        0
+      ],
+      "vae": [
+        "184",
+        0
+      ]
+    },
+    "class_type": "LTXVLatentUpsampler",
+    "_meta": {
+      "title": "spatial"
+    }
+  },
+  "119": {
+    "inputs": {
+      "noise": [
+        "114",
+        0
+      ],
+      "guider": [
+        "103",
+        0
+      ],
+      "sampler": [
+        "138",
+        0
+      ],
+      "sigmas": [
+        "100",
+        0
+      ],
+      "latent_image": [
+        "117",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "고급 사용자 정의 샘플러"
+    }
+  },
+  "121": {
+    "inputs": {
+      "text": "[global prompt]\n\nA fixed industrial CCTV video based on the provided reference image. The entire video must remain a single, unchanged wide security-camera view from start to finish. The original full-frame composition, camera position, viewing angle, perspective, equipment layout, and lighting must remain exactly the same throughout the video.\n\n[camera]\n\nThe camera is a permanently mounted CCTV camera overlooking an industrial site. It must remain completely fixed, with no movement, shaking, panning, tilting, zooming, tracking, or reframing. The frame must remain unchanged throughout the entire video.\n\n[event start]\n\nAt the beginning of the video, the industrial site is still and operating normally. Shortly afterward, a small early-stage fire naturally ignites in one plausible ground-level area near equipment or stored materials.\n\n[fire details]\n\nThe fire must remain localized to a single location. The fire should stay small, but the orange flames must be clearly and distinctly visible within the original wide CCTV frame.\n\nThe flames should flicker naturally without suddenly growing larger or rising intensely. The fire must not spread widely to nearby equipment or materials and must not develop into a severe fire.\n\n[smoke details]\n\nA small amount of thin, light gray smoke is produced by the flames. The smoke should rise slowly above the fire source and remain light and low in density.\n\nThe smoke must not spread widely, become thick black smoke, or obscure nearby equipment or the background.\n\n[duration]\n\nThe small localized fire must continue until the end of the video. The flame size and smoke volume must not increase significantly over time. The fire must not explode or rapidly spread to the surrounding area.\n\n[motion constraint]\n\nOnly the small flames and the limited amount of smoke at the fire location are allowed to move. All other equipment, background elements, structures, and lighting must remain completely static. No people or vehicles may appear.\n\n\n",
+      "clip": [
+        "346",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP 텍스트 인코딩 (프롬프트)"
+    }
+  },
+  "125": {
+    "inputs": {
+      "av_latent": [
+        "119",
+        0
+      ]
+    },
+    "class_type": "LTXVSeparateAVLatent",
+    "_meta": {
+      "title": "LTXVSeparateAVLatent"
+    }
+  },
+  "127": {
+    "inputs": {
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 4096,
+      "temporal_overlap": 8,
+      "samples": [
+        "125",
+        0
+      ],
+      "vae": [
+        "184",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeTiled",
+    "_meta": {
+      "title": "VAE 디코드 (타일)"
+    }
+  },
+  "129": {
+    "inputs": {
+      "cfg": 1.2,
+      "model": [
+        "342",
+        0
+      ],
+      "positive": [
+        "107",
+        0
+      ],
+      "negative": [
+        "107",
+        1
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG 가이드"
+    }
+  },
+  "134": {
+    "inputs": {
+      "lora_name": "ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors",
+      "strength_model": 0.65,
+      "model": [
+        "345",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Distill Lora (ONLY if you use DEV model)"
+    }
+  },
+  "137": {
+    "inputs": {
+      "sampler_name": "lcm"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSampler (선택)"
+    }
+  },
+  "138": {
+    "inputs": {
+      "sampler_name": "lcm"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSampler (선택)"
+    }
+  },
+  "140": {
+    "inputs": {
+      "frame_rate": [
+        "285",
+        0
+      ],
+      "loop_count": 0,
+      "filename_prefix": "Gen_Fire_Local",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "127",
+        0
+      ],
+      "audio": [
+        "201",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "160": {
+    "inputs": {
+      "strength": 1,
+      "bypass": [
+        "290",
+        0
+      ],
+      "vae": [
+        "184",
+        0
+      ],
+      "image": [
+        "246",
+        0
+      ],
+      "latent": [
+        "118",
+        0
+      ]
+    },
+    "class_type": "LTXVImgToVideoInplace",
+    "_meta": {
+      "title": "LTXVImgToVideoInplace"
+    }
+  },
+  "161": {
+    "inputs": {
+      "strength": 0.9,
+      "bypass": [
+        "290",
+        0
+      ],
+      "vae": [
+        "184",
+        0
+      ],
+      "image": [
+        "162",
+        0
+      ],
+      "latent": [
+        "108",
+        0
+      ]
+    },
+    "class_type": "LTXVImgToVideoInplace",
+    "_meta": {
+      "title": "LTXVImgToVideoInplace"
+    }
+  },
+  "162": {
+    "inputs": {
+      "img_compression": 33,
+      "image": [
+        "246",
+        0
+      ]
+    },
+    "class_type": "LTXVPreprocess",
+    "_meta": {
+      "title": "LTXV 전처리"
+    }
+  },
+  "163": {
+    "inputs": {
+      "image": [
+        "164",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "이미지 크기 가져오기"
+    }
+  },
+  "164": {
+    "inputs": {
+      "resize_type": "scale by multiplier",
+      "resize_type.multiplier": 0.5,
+      "scale_method": "area",
+      "input": [
+        "165",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "이미지/마스크 크기 조정"
+    }
+  },
+  "165": {
+    "inputs": {
+      "width": [
+        "292",
+        0
+      ],
+      "height": [
+        "293",
+        0
+      ],
+      "upscale_method": "nearest-exact",
+      "keep_proportion": "crop",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 32,
+      "device": "cpu",
+      "image": [
+        "167",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "167": {
+    "inputs": {
+      "image": "D27_#7 STACK.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "이미지 로드"
+    }
+  },
+  "184": {
+    "inputs": {
+      "vae_name": "LTX23_video_vae_bf16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE (video VAE)"
+    }
+  },
+  "189": {
+    "inputs": {
+      "model_name": "ltx-2.3-spatial-upscaler-x1.5-1.0.safetensors"
+    },
+    "class_type": "LatentUpscaleModelLoader",
+    "_meta": {
+      "title": "Latent 업스케일 모델 불러오기"
+    }
+  },
+  "190": {
+    "inputs": {
+      "clip_name1": "gemma_3_12B_it_fpmixed.safetensors",
+      "clip_name2": "ltx-2.3_text_projection_bf16.safetensors",
+      "type": "ltxv",
+      "device": "default"
+    },
+    "class_type": "DualCLIPLoader",
+    "_meta": {
+      "title": "CLIPLoader (Gemma + LTX Embeddings)"
+    }
+  },
+  "196": {
+    "inputs": {
+      "vae_name": "LTX23_audio_vae_bf16.safetensors",
+      "device": "main_device",
+      "weight_dtype": "bf16"
+    },
+    "class_type": "VAELoaderKJ",
+    "_meta": {
+      "title": "VAELoader KJ (audio VAE)"
+    }
+  },
+  "199": {
+    "inputs": {
+      "frames_number": [
+        "287",
+        1
+      ],
+      "frame_rate": [
+        "311",
+        1
+      ],
+      "batch_size": 1,
+      "audio_vae": [
+        "196",
+        0
+      ]
+    },
+    "class_type": "LTXVEmptyLatentAudio",
+    "_meta": {
+      "title": "LTXV 빈 latent 오디오"
+    }
+  },
+  "201": {
+    "inputs": {
+      "samples": [
+        "125",
+        1
+      ],
+      "audio_vae": [
+        "196",
+        0
+      ]
+    },
+    "class_type": "LTXVAudioVAEDecode",
+    "_meta": {
+      "title": "LTXV 오디오 VAE 디코드"
+    }
+  },
+  "206": {
+    "inputs": {
+      "steps": 8,
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1,
+      "latent": [
+        "109",
+        0
+      ]
+    },
+    "class_type": "LTXVScheduler",
+    "_meta": {
+      "title": "LTXV 스케줄러"
+    }
+  },
+  "246": {
+    "inputs": {
+      "longer_edge": 1536,
+      "images": [
+        "165",
+        0
+      ]
+    },
+    "class_type": "ResizeImagesByLongerEdge",
+    "_meta": {
+      "title": "긴 변 기준 이미지 크기 조정"
+    }
+  },
+  "285": {
+    "inputs": {
+      "value": 24
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "FPS"
+    }
+  },
+  "287": {
+    "inputs": {
+      "expression": "1+ 8*(round(a*b)/8)",
+      "a": [
+        "291",
+        0
+      ],
+      "b": [
+        "285",
+        0
+      ]
+    },
+    "class_type": "SimpleCalculatorKJ",
+    "_meta": {
+      "title": "SimpleCalculatorKJ"
+    }
+  },
+  "290": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "Text To Video (no image ref)"
+    }
+  },
+  "291": {
+    "inputs": {
+      "value": 15
+    },
+    "class_type": "INTConstant",
+    "_meta": {
+      "title": "LENGTH (in seconds)"
+    }
+  },
+  "292": {
+    "inputs": {
+      "value": 1280
+    },
+    "class_type": "INTConstant",
+    "_meta": {
+      "title": "WIDTH"
+    }
+  },
+  "293": {
+    "inputs": {
+      "value": 720
+    },
+    "class_type": "INTConstant",
+    "_meta": {
+      "title": "HEIGHT"
+    }
+  },
+  "301": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "134",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "Power Lora Loader (rgthree)"
+    }
+  },
+  "311": {
+    "inputs": {
+      "expression": "a",
+      "variables.a": [
+        "285",
+        0
+      ]
+    },
+    "class_type": "SimpleCalculatorKJ",
+    "_meta": {
+      "title": "SimpleCalculatorKJ"
+    }
+  },
+  "329": {
+    "inputs": {
+      "unet_name": "ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "확산 모델 로드"
+    }
+  },
+  "330": {
+    "inputs": {
+      "vae_name": "taeltx2_3.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Tiny VAE (for sampler previews)"
+    }
+  },
+  "337": {
+    "inputs": {
+      "preview_rate": 8,
+      "model": [
+        "301",
+        0
+      ],
+      "vae": [
+        "330",
+        0
+      ]
+    },
+    "class_type": "LTX2SamplingPreviewOverride",
+    "_meta": {
+      "title": "LTX2 Sampling Preview Override"
+    }
+  },
+  "342": {
+    "inputs": {
+      "nag_scale": 14,
+      "nag_alpha": 0.25,
+      "nag_tau": 2.5,
+      "inplace": true,
+      "model": [
+        "337",
+        0
+      ],
+      "nag_cond_video": [
+        "107",
+        1
+      ],
+      "nag_cond_audio": [
+        "107",
+        1
+      ]
+    },
+    "class_type": "LTX2_NAG",
+    "_meta": {
+      "title": "LTX2 NAG"
+    }
+  },
+  "345": {
+    "inputs": {
+      "unet_name": "LTX-2.3-22B-distilled-1.1-Q4_K_S.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {
+      "title": "Unet Loader (GGUF)"
+    }
+  },
+  "346": {
+    "inputs": {
+      "clip_name1": "gemma-3-12b-it-Q4_0.gguf",
+      "clip_name2": "ltx-2.3_text_projection_bf16.safetensors",
+      "type": "ltxv"
+    },
+    "class_type": "DualCLIPLoaderGGUF",
+    "_meta": {
+      "title": "CLIP GGUF (Gemma + text projection)"
+    }
+  }
+}

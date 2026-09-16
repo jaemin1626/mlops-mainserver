@@ -40,6 +40,7 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "shared/**/*",
       "scripts/ocr_worker.py",
       "public/logo.ico"
     ],

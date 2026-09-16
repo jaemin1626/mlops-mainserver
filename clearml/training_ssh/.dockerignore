@@ -1,0 +1,16 @@
+*
+!Dockerfile
+!client.py
+!metrics_poller.py
+
+!annotation_builder.py
+!transfer_annotations.py
+!annotation_api.py
+!detector.py
+
+!vlm.py
+!vlm_options.py
+
+!dataset_registry.py
+!dataset_api.py
+!mlops_dataset_tree.py

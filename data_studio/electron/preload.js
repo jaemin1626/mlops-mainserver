@@ -6,9 +6,11 @@ contextBridge.exposeInMainWorld('electron', {
   setMediaBaseRoot: (path) => ipcRenderer.invoke('setMediaBaseRoot', path),
   getMediaBaseRoot: () => ipcRenderer.invoke('getMediaBaseRoot'),
   scanFolder: (path) => ipcRenderer.invoke('scanFolder', path),
+  scanYoloDashboard: (detectorRoot) => ipcRenderer.invoke('scanYoloDashboard', detectorRoot),
+  scanMediaFolder: (path) => ipcRenderer.invoke('scanMediaFolder', path),
   readTxt: (path) => ipcRenderer.invoke('readTxt', path),
   writeTxt: (path, content) => ipcRenderer.invoke('writeTxt', path, content),
-  openLabelFileDialog: () => ipcRenderer.invoke('openLabelFileDialog'),
+  openLabelFileDialog: (opts) => ipcRenderer.invoke('openLabelFileDialog', opts),
   readLabelFile: (path) => ipcRenderer.invoke('readLabelFile', path),
   showItemInFolder: (path) => ipcRenderer.invoke('showItemInFolder', path),
   deleteImageAndTxt: (imagePath, txtPath, jsonPath) =>

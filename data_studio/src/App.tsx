@@ -1,18 +1,30 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import ServerFolderPicker from './components/ServerFolderPicker';
 import YoloShortcutsModal from './components/YoloShortcutsModal';
+import type { YoloLaunchRequest } from './dashboardTypes';
+import Dashboard from './modes/Dashboard';
 import LandmarkWorkspace from './modes/LandmarkWorkspace';
 import OcrLabelWorkspace from './modes/OcrLabelWorkspace';
 import PolygonWorkspace from './modes/PolygonWorkspace';
 import VlmWorkspace from './modes/VlmWorkspace';
 import YoloWorkspace from './modes/YoloWorkspace';
 
-export type AppMode = 'yolo' | 'vlm' | 'polygon' | 'landmark' | 'ocr';
+export type AppMode = 'home' | 'yolo' | 'vlm' | 'polygon' | 'landmark' | 'ocr';
 
 const App: React.FC = () => {
-  const [mode, setMode] = useState<AppMode>('yolo');
+  const [mode, setMode] = useState<AppMode>('home');
+  const [yoloLaunch, setYoloLaunch] = useState<YoloLaunchRequest | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const isWeb = window.__DATA_STUDIO_WEB__ === true;
+
+  const handleOpenYoloFromDashboard = useCallback((request: YoloLaunchRequest) => {
+    setYoloLaunch(request);
+    setMode('yolo');
+  }, []);
+
+  const handleYoloLaunchConsumed = useCallback(() => {
+    setYoloLaunch(null);
+  }, []);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: 'var(--bg-deep)' }}>
@@ -22,6 +34,15 @@ const App: React.FC = () => {
           <span className="font-bold text-sm sm:text-base tracking-tight text-white whitespace-nowrap">Intellivix Data Studio</span>
         </div>
         <div className="flex rounded-xl p-0.5 glass border border-white/10 shrink-0" role="tablist" aria-label="작업 모드">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'home'}
+            onClick={() => setMode('home')}
+            className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all ${mode === 'home' ? 'bg-white/15 text-white shadow-[0_0_16px_rgba(255,255,255,0.12)]' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+          >
+            홈
+          </button>
           <button
             type="button"
             role="tab"
@@ -38,7 +59,7 @@ const App: React.FC = () => {
             onClick={() => setMode('vlm')}
             className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all ${mode === 'vlm' ? 'bg-[var(--accent-purple)]/90 text-white shadow-[0_0_16px_rgba(176,142,212,0.35)]' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
           >
-            VLM 검수
+            VLM 작업
           </button>
           {!isWeb && (
             <>
@@ -90,8 +111,10 @@ const App: React.FC = () => {
       {isWeb && <ServerFolderPicker />}
 
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {mode === 'yolo' ? (
-          <YoloWorkspace />
+        {mode === 'home' ? (
+          <Dashboard onOpenYolo={handleOpenYoloFromDashboard} />
+        ) : mode === 'yolo' ? (
+          <YoloWorkspace launchRequest={yoloLaunch} onLaunchConsumed={handleYoloLaunchConsumed} />
         ) : mode === 'vlm' ? (
           <VlmWorkspace />
         ) : mode === 'polygon' ? (

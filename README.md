@@ -50,9 +50,10 @@ ClearML UI에서 credentials 발급 → `.env`에 넣기 → **`bash start.sh`**
 
 | 서비스 | URL | 비고 |
 |--------|-----|------|
-| ClearML UI | http://172.16.4.82:8080 | 실험·학습 로그 |
-| Data Studio | http://172.16.4.82:8080/data-studio/ | Dataset 라벨링 |
-| Grafana | http://172.16.4.82:3000 | 선택, MLOps 현황 |
+| ClearML UI | `http://{CLEARML_SERVER_IP}:8080` | `.env` 참고 |
+| Data Studio | `http://{CLEARML_SERVER_IP}:8080/data-studio/` | |
+| Seoul Studio | `http://{CLEARML_SERVER_IP}:8080/seoul-studio/` | ComfyUI: `{TRAINING_SERVER_IP}:{COMFYUI_PORT}` |
+| Grafana | `http://{MONITORING_SERVER_IP}:3000` | 선택 |
 
 로그인 계정·비밀번호는 `start.sh` 실행 후 터미널 출력 또는 `/opt/clearml/.env` 의 `CLEARML_LOGIN_*` 를 확인하세요.
 
@@ -74,10 +75,12 @@ bash /opt/clearml/packaging/apply-env.sh --restart
 
 | 항목 | `.env` 키 | 필수 | 설명 |
 |------|-----------|------|------|
-| ClearML 서버 IP | `CLEARML_SERVER_IP` | ✅ | 82 IP |
+| MLOps 서버 IP | `CLEARML_SERVER_IP` | ✅ | ClearML·Seoul Studio·Grafana |
 | 웹/API/파일 포트 | `CLEARML_WEB_PORT` 등 | ✅ | 기본 8080/8008/8081 |
-| Dataset NFS    | `TRAINING_SERVER_IP`, `TRAINING_DATASET_PATH` | Data Studio용 | 168 경로 |
-| Dataset 로컬 마운트 | `HOST_DATASET_PATH` | Data Studio용 | 기본 `/opt/clearml/data/datasets` |
+| 학습·ComfyUI IP | `TRAINING_SERVER_IP` | ✅ | NFS + ComfyUI |
+| ComfyUI 포트 | `COMFYUI_PORT` | ✅ | 기본 8188 |
+| Dataset NFS | `TRAINING_DATASET_PATH`, `HOST_DATASET_PATH` | Data Studio | |
+| 생성 영상 NFS | `TRAINING_GENERATED_PATH`, `MLOPS_GENERATED_MOUNT_PATH` | Seoul Studio | |
 | ClearML UI 로그인 | `CLEARML_LOGIN_USER`, `CLEARML_LOGIN_PASSWORD` | 선택 | 비우면 `start.sh` 가 자동 생성 |
 | Grafana 비밀번호 | `GRAFANA_ADMIN_PASSWORD` | Grafana 사용 시 | |
 | Grafana용 API 키 | `CLEARML_ACCESS_KEY`, `CLEARML_SECRET_KEY` | Grafana 사용 시 | ClearML UI에서 발급 |
@@ -88,7 +91,7 @@ bash /opt/clearml/packaging/apply-env.sh --restart
 |---------|---------------|------|
 | `CLEARML_TOKEN_SECRET`, `CLEARML_SESSION_SECRET` | `packaging/gen-secrets.sh` | 서버 고유 JWT 서명 |
 | `config/apiserver.conf` | `packaging/gen-auth.sh` | 웹 UI 로그인 계정 |
-| `CLEARML_WEB_HOST`, `CLEARML_API_HOST` 등 | `packaging/apply-env.sh` | IP에서 URL 자동 계산 |
+| `CLEARML_WEB_HOST`, `SEOUL_STUDIO_COMFY_URL` 등 | `packaging/apply-env.sh` | IP에서 URL 자동 계산 |
 
 ### Grafana API 키 발급 (선택)
 
@@ -106,6 +109,7 @@ bash /opt/clearml/packaging/apply-env.sh --restart
 │   ├── start.sh       ← 최초·재기동
 │   └── monitoring/    ← Grafana (선택)
 └── data_studio/       # Data Studio 빌드 소스
+└── ComfyUI_seoul/     # Seoul Studio (ComfyUI 영상 생성) 빌드 소스
 ```
 
 오프라인 서버 이관: [`clearml/packaging/README.md`](clearml/packaging/README.md)

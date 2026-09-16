@@ -65,22 +65,36 @@ test('web app exposes VLM while keeping annotation tabs Electron-only', () => {
   assert.ok(polygonButton > electronOnlyStart);
 });
 
-test('dataset entry paths and VLM sibling media auto-detection are configured', () => {
+test('dataset entry paths and VLM per-image folder workflow are configured', () => {
   const yolo = readProjectFile('src/modes/YoloWorkspace.tsx');
   const vlm = readProjectFile('src/modes/VlmWorkspace.tsx');
+  const vlmPerImage = readProjectFile('src/vlmPerImage.ts');
   const electronMain = readProjectFile('electron/main.js');
 
   assert.match(
-    yolo,
-    /openFolderDialog\(\{\s*initialPath:\s*'\/data\/datasets\/detector'\s*\}\)/
+    vlm,
+    /openFolderDialog\(\{[\s\S]*?initialPath:\s*'\/data\/datasets\/vlm'[\s\S]*?pickerRoot:\s*'\/data\/datasets\/vlm'/
   );
+  assert.match(
+    yolo,
+    /openFolderDialog\(\{[\s\S]*?initialPath:\s*'\/data\/datasets\/detector'[\s\S]*?pickerRoot:\s*'\/data\/datasets\/detector'/
+  );
+  assert.match(
+    yolo,
+    /openLabelFileDialog\(\{[\s\S]*?initialPath:\s*'\/data\/datasets\/detector'[\s\S]*?pickerRoot:\s*'\/data\/datasets\/detector'/
+  );
+  assert.match(readProjectFile('src/webFsBridge.ts'), /openLabelFileDialog:\s*\(opts\)\s*=>\s*pickLabel\(opts\?\.initialPath,\s*opts\?\.pickerRoot\)/);
+  assert.match(vlm, /scanMediaFolder\(path\)/);
+  assert.match(readProjectFile('server/fsRoutes.js'), /router\.get\('\/fs\/media'/);
+  assert.match(readProjectFile('src/webFsBridge.ts'), /scanMediaFolder:[\s\S]*?\/fs\/media\?path=/);
+  assert.match(vlm, /item\.jsonPath/);
+  assert.match(vlmPerImage, /buildPerImageJsonFileContent/);
+  assert.match(readProjectFile('shared/vlmJsonPaths.js'), /images_json/);
+  assert.match(readProjectFile('server/fsRoutes.js'), /vlmJsonPathForMediaPath/);
   assert.match(
     electronMain,
     /openFolderDialog',\s*async\s*\(_,\s*opts\)[\s\S]*?defaultPath:\s*opts\?\.initialPath/
   );
-  assert.match(vlm, /folderName\.includes\('video'\)/);
-  assert.match(vlm, /\/data-studio\/api\/fs\/list\?path=\$\{encodeURIComponent\(dir\)\}/);
-  assert.match(vlm, /if\s*\(auto\)\s*\{[\s\S]*?setMediaBaseRoot\(auto\)[\s\S]*?setMediaBasePath\(auto\)[\s\S]*?localStorage\.setItem\(VLM_MEDIA_BASE_STORAGE_KEY,\s*auto\)[\s\S]*?\}\s*else\s*\{[\s\S]*?syncMediaRoots\(jsonDir\)/);
   assert.match(readProjectFile('src/vlmMedia.ts'), /record\.video/);
   assert.match(readProjectFile('src/webMediaBase.ts'), /resolveRelativePath/);
 });

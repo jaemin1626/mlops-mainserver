@@ -4,6 +4,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY index.html vite.config.ts tsconfig.json ./
 COPY public ./public
+COPY shared ./shared
 COPY src ./src
 COPY CHANGELOG.md ./CHANGELOG.md
 RUN npm run build
@@ -19,6 +20,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
+COPY shared ./shared
 COPY server ./server
 COPY --from=build /app/dist ./dist
 EXPOSE 8091

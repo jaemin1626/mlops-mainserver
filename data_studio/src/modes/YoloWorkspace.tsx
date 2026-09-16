@@ -6,6 +6,29 @@ import { COLOR_PALETTE } from '../constants';
 import { parseYoloTxt, generateYoloTxt } from '../yoloFormat';
 import { newId } from '../newId';
 import AnnotationCanvas from '../components/AnnotationCanvas';
+import LabelHistoryPanel from '../components/LabelHistoryPanel';
+import WorkflowNavigateModal from '../components/WorkflowNavigateModal';
+import { useWorkflowNavGate } from '../useWorkflowNavGate';
+import type { YoloLaunchRequest } from '../dashboardTypes';
+import {
+  appendLabelSaveHistory,
+  canEditLabels,
+  loadYoloMeta,
+  saveYoloMeta,
+  transitionApprove,
+  transitionReject,
+  transitionSubmit,
+  workflowStatusLabel,
+  yoloMetaPathForImage,
+  type YoloImageMeta,
+  type YoloWorkflowRole,
+  type YoloWorkflowStatus,
+} from '../yoloMeta';
+
+interface YoloWorkspaceProps {
+  launchRequest?: YoloLaunchRequest | null;
+  onLaunchConsumed?: () => void;
+}
 
 interface OfflineImageItem {
   name: string;
@@ -31,6 +54,34 @@ interface SavedClassSet {
 
 const SAVED_SETS_STORAGE_KEY = 'intellivixYolo.savedClassSetsV1';
 const AUTO_SAVE_STORAGE_KEY = 'intellivixYolo.autoSaveV1';
+const WORKFLOW_ROLE_KEY = 'intellivixYolo.workflowRoleV1';
+const WORKFLOW_USER_KEY = 'intellivixYolo.workflowUserV1';
+const WORKFLOW_STATUS_FILTER_KEY = 'intellivixYolo.workflowStatusFilterV1';
+
+const STATUS_FILTER_OPTIONS: { value: 'all' | YoloWorkflowStatus; label: string }[] = [
+  { value: 'all', label: '전체' },
+  { value: 'draft', label: '작업중' },
+  { value: 'submitted', label: '검수대기' },
+  { value: 'approved', label: '승인' },
+  { value: 'rejected', label: '반려' },
+];
+
+function workflowStatusBadgeClass(status: YoloWorkflowStatus): string {
+  switch (status) {
+    case 'draft':
+      return 'border-slate-500/40 bg-slate-500/15 text-slate-300';
+    case 'submitted':
+      return 'border-amber-400/40 bg-amber-400/15 text-amber-200';
+    case 'approved':
+      return 'border-emerald-400/40 bg-emerald-400/15 text-emerald-200';
+    case 'rejected':
+      return 'border-red-400/40 bg-red-400/15 text-red-300';
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+}
 
 function classNamesToYoloClasses(classNames: string[]): YoloClass[] {
   return classNames.map((name, index) => ({
@@ -40,7 +91,7 @@ function classNamesToYoloClasses(classNames: string[]): YoloClass[] {
   }));
 }
 
-const YoloWorkspace: React.FC = () => {
+const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ launchRequest = null, onLaunchConsumed }) => {
   const [workFolderPath, setWorkFolderPath] = useState<string | null>(null);
   const [imageList, setImageList] = useState<OfflineImageItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -75,6 +126,37 @@ const YoloWorkspace: React.FC = () => {
   // 화면에 실제로 그리는 항목
   const [displayItem, setDisplayItem] = useState<OfflineImageItem | null>(null);
   const [displayAnnotations, setDisplayAnnotations] = useState<BoundingBox[]>([]);
+  const [displayMeta, setDisplayMeta] = useState<YoloImageMeta | null>(null);
+
+  const [workflowRole, setWorkflowRole] = useState<YoloWorkflowRole>(() => {
+    try {
+      const stored = localStorage.getItem(WORKFLOW_ROLE_KEY);
+      return stored === 'reviewer' ? 'reviewer' : 'worker';
+    } catch {
+      return 'worker';
+    }
+  });
+  const [workflowUser, setWorkflowUser] = useState(() => {
+    try {
+      return localStorage.getItem(WORKFLOW_USER_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [statusFilter, setStatusFilter] = useState<'all' | YoloWorkflowStatus>(() => {
+    try {
+      const stored = localStorage.getItem(WORKFLOW_STATUS_FILTER_KEY);
+      if (stored === 'draft' || stored === 'submitted' || stored === 'approved' || stored === 'rejected') {
+        return stored;
+      }
+      return 'all';
+    } catch {
+      return 'all';
+    }
+  });
+  const [statusFilteredNavIndices, setStatusFilteredNavIndices] = useState<number[] | null>(null);
+  const [statusFilterLoading, setStatusFilterLoading] = useState(false);
+  const [statusFilterScanKey, setStatusFilterScanKey] = useState(0);
 
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [folderStats, setFolderStats] = useState<FolderStats | null>(null);
@@ -92,6 +174,7 @@ const YoloWorkspace: React.FC = () => {
   const imageListRef = useRef(imageList);
   imageListRef.current = imageList;
   const lastWriteWarningRef = useRef<{ path: string; at: number } | null>(null);
+  const lastSavedTxtRef = useRef('');
 
   const classesRef = useRef(classes);
   const selectedClassRef = useRef(selectedClass);
@@ -162,14 +245,29 @@ const YoloWorkspace: React.FC = () => {
     [imageList]
   );
 
-  const navIndices = useMemo(() => {
+  const classNavIndices = useMemo(() => {
     if (browseFilterClassId === null) return imageList.map((_, i) => i);
     if (filteredNavIndices === null) return [];
     return filteredNavIndices;
   }, [browseFilterClassId, filteredNavIndices, imageList]);
+
+  const navIndices = useMemo(() => {
+    const classScanPending = browseFilterClassId !== null && filteredNavIndices === null;
+    const statusScanPending = statusFilter !== 'all' && statusFilteredNavIndices === null;
+    if (classScanPending || statusScanPending) return [];
+
+    let indices = classNavIndices;
+    if (statusFilter !== 'all') {
+      const statusSet = new Set(statusFilteredNavIndices ?? []);
+      indices = indices.filter((i) => statusSet.has(i));
+    }
+    return indices;
+  }, [browseFilterClassId, classNavIndices, filteredNavIndices, statusFilter, statusFilteredNavIndices]);
+
   /** effect 직후 한 프레임까지 포함해 스캔 중으로 간주 */
   const isBrowseFilterScanning =
-    browseFilterClassId !== null && (browseFilterLoading || filteredNavIndices === null);
+    (browseFilterClassId !== null && (browseFilterLoading || filteredNavIndices === null)) ||
+    (statusFilter !== 'all' && (statusFilterLoading || statusFilteredNavIndices === null));
   const navCount = navIndices.length;
   const absoluteImageIndex = navCount > 0 ? (navIndices[Math.min(currentIndex, navCount - 1)] ?? 0) : -1;
   const currentItem = absoluteImageIndex >= 0 ? (imageList[absoluteImageIndex] ?? null) : null;
@@ -232,6 +330,68 @@ const YoloWorkspace: React.FC = () => {
     };
   }, [browseFilterClassId, imageListScanKey]);
 
+  /** 상태 필터 스캔 */
+  useEffect(() => {
+    if (statusFilter === 'all') {
+      setStatusFilteredNavIndices(null);
+      setStatusFilterLoading(false);
+      return;
+    }
+    const list = imageListRef.current;
+    if (!window.electron || list.length === 0) {
+      setStatusFilteredNavIndices([]);
+      setStatusFilterLoading(false);
+      setCurrentIndex(0);
+      return;
+    }
+    let cancelled = false;
+    setStatusFilteredNavIndices(null);
+    setStatusFilterLoading(true);
+    (async () => {
+      const indices: number[] = [];
+      for (let i = 0; i < list.length; i++) {
+        if (cancelled) return;
+        try {
+          const meta = await loadYoloMeta((p) => window.electron!.readJsonFile(p), list[i].imagePath);
+          if (meta.workflowStatus === statusFilter) indices.push(i);
+        } catch {
+          if (statusFilter === 'draft') indices.push(i);
+        }
+      }
+      if (cancelled) return;
+      setStatusFilteredNavIndices(indices);
+      setStatusFilterLoading(false);
+      setCurrentIndex((prev) => Math.min(prev, Math.max(0, indices.length - 1)));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [statusFilter, imageListScanKey, statusFilterScanKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WORKFLOW_ROLE_KEY, workflowRole);
+    } catch {
+      /* ignore */
+    }
+  }, [workflowRole]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WORKFLOW_USER_KEY, workflowUser);
+    } catch {
+      /* ignore */
+    }
+  }, [workflowUser]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WORKFLOW_STATUS_FILTER_KEY, statusFilter);
+    } catch {
+      /* ignore */
+    }
+  }, [statusFilter]);
+
   useEffect(() => {
     if (navCount === 0) return;
     if (currentIndex >= navCount) setCurrentIndex(navCount - 1);
@@ -285,46 +445,91 @@ const YoloWorkspace: React.FC = () => {
   useEffect(() => {
     setDisplayItem(null);
     setDisplayAnnotations([]);
+    setDisplayMeta(null);
+    lastSavedTxtRef.current = '';
   }, [imageList]);
 
-  // 현재(절대) 인덱스에 대해 라벨 로드 후, 이미지+라벨을 동시에 갱신
+  // 현재(절대) 인덱스에 대해 라벨·메타 로드 후, 이미지+라벨을 동시에 갱신
   useEffect(() => {
     if (!currentItem || !window.electron || absoluteImageIndex < 0) return;
     const index = absoluteImageIndex;
     let cancelled = false;
-    loadAnnotationsForIndex(index).then((loaded) => {
+    (async () => {
+      const [loaded, txtContent, meta] = await Promise.all([
+        loadAnnotationsForIndex(index),
+        window.electron!.readTxt(currentItem.txtPath),
+        loadYoloMeta((p) => window.electron!.readJsonFile(p), currentItem.imagePath),
+      ]);
       if (cancelled) return;
+      lastSavedTxtRef.current = txtContent;
       setDisplayItem(currentItem);
       setDisplayAnnotations(loaded);
-    });
-    return () => { cancelled = true; };
+      setDisplayMeta(meta);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [absoluteImageIndex, currentItem, loadAnnotationsForIndex]);
+
+  const openFolderByPath = useCallback(
+    async (folderPath: string, options?: { statusFilter?: YoloWorkflowStatus }) => {
+      if (!window.electron) return;
+      try {
+        await window.electron.setWorkspaceRoot(folderPath);
+        const list = await window.electron.scanFolder(folderPath);
+        setWorkFolderPath(folderPath);
+        setImageList(list);
+        setCurrentIndex(0);
+        setBrowseFilterClassId(null);
+        setFilteredNavIndices(null);
+        setBrowseFilterLoading(false);
+        setBrowseFilterScanProgress(null);
+        if (options?.statusFilter) {
+          setStatusFilter(options.statusFilter);
+          setStatusFilterScanKey((k) => k + 1);
+        } else {
+          setStatusFilter('all');
+          setStatusFilteredNavIndices(null);
+          setStatusFilterLoading(false);
+        }
+        setStatusMessage(`폴더 열림: ${folderPath} — 하위 폴더 포함 ${list.length}개 이미지`);
+      } catch (e) {
+        setStatusMessage('폴더 열기 실패: ' + (e as Error).message);
+      }
+    },
+    []
+  );
 
   const handleOpenFolder = async () => {
     if (!window.electron) return;
     try {
-      const path = await window.electron.openFolderDialog({ initialPath: '/data/datasets' });
+      const path = await window.electron.openFolderDialog({
+        initialPath: '/data/datasets/detector',
+        pickerRoot: '/data/datasets/detector',
+      });
       if (!path) return;
-      await window.electron.setWorkspaceRoot(path);
-      const list = await window.electron.scanFolder(path);
-      setWorkFolderPath(path);
-      setImageList(list);
-      setCurrentIndex(0);
-      setBrowseFilterClassId(null);
-      setFilteredNavIndices(null);
-      setBrowseFilterLoading(false);
-      setStatusMessage(`폴더 열림: ${path} — 하위 폴더 포함 ${list.length}개 이미지`);
+      await openFolderByPath(path);
     } catch (e) {
       setStatusMessage('폴더 열기 실패: ' + (e as Error).message);
     }
   };
+
+  useEffect(() => {
+    if (!launchRequest?.folderPath) return;
+    void openFolderByPath(launchRequest.folderPath, { statusFilter: launchRequest.statusFilter }).finally(() => {
+      onLaunchConsumed?.();
+    });
+  }, [launchRequest, onLaunchConsumed, openFolderByPath]);
 
   /** txt 파일을 불러와 새 클래스 세트로 저장하고 적용 */
   const handleLoadFileAndSave = async () => {
     if (!window.electron) return;
     setLabelMenuOpen(false);
     try {
-      const path = await window.electron.openLabelFileDialog();
+      const path = await window.electron.openLabelFileDialog({
+        initialPath: '/data/datasets/detector',
+        pickerRoot: '/data/datasets/detector',
+      });
       if (!path) return;
       const content = await window.electron.readLabelFile(path);
       const lines = content.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -491,17 +696,36 @@ const YoloWorkspace: React.FC = () => {
   }, []);
 
   const persistCurrentTxt = useCallback(
-    async (item: OfflineImageItem, annotations: BoundingBox[]) => {
+    async (item: OfflineImageItem, annotations: BoundingBox[], options?: { skipHistory?: boolean }) => {
       if (!window.electron) return false;
       const content = generateYoloTxt(annotations);
+      const beforeTxt = lastSavedTxtRef.current;
       const ok = await window.electron.writeTxt(item.txtPath, content);
       if (!ok) {
         notifyTxtWriteFailure(item);
         return false;
       }
+      const actor = workflowUser.trim();
+      if (!options?.skipHistory && actor && beforeTxt !== content) {
+        try {
+          const meta = await loadYoloMeta((p) => window.electron!.readJsonFile(p), item.imagePath);
+          const updated = appendLabelSaveHistory(meta, actor, workflowRole, beforeTxt, content);
+          if (updated) {
+            const metaOk = await saveYoloMeta(
+              (p, c) => window.electron!.writeJsonFile(p, c),
+              item.imagePath,
+              updated
+            );
+            if (metaOk) setDisplayMeta(updated);
+          }
+        } catch {
+          /* meta history is best-effort */
+        }
+      }
+      lastSavedTxtRef.current = content;
       return true;
     },
-    [notifyTxtWriteFailure]
+    [notifyTxtWriteFailure, workflowRole, workflowUser]
   );
 
   const handleUpdateAnnotations = useCallback(
@@ -518,7 +742,96 @@ const YoloWorkspace: React.FC = () => {
     return persistCurrentTxt(displayItem, displayAnnotations);
   }, [displayAnnotations, displayItem, persistCurrentTxt]);
 
-  const goToIndex = useCallback(
+  const requireWorkflowUser = useCallback((): string | null => {
+    const name = workflowUser.trim();
+    if (!name) {
+      window.alert('역할 옆에 이름을 입력해 주세요.');
+      return null;
+    }
+    return name;
+  }, [workflowUser]);
+
+  const persistWorkflowMeta = useCallback(
+    async (next: YoloImageMeta) => {
+      if (!window.electron || !displayItem) return false;
+      const ok = await saveYoloMeta(
+        (p, c) => window.electron!.writeJsonFile(p, c),
+        displayItem.imagePath,
+        next
+      );
+      if (!ok) {
+        setStatusMessage('메타 저장 실패 (.meta.json)');
+        return false;
+      }
+      setDisplayMeta(next);
+      if (statusFilter !== 'all') setStatusFilterScanKey((k) => k + 1);
+      return true;
+    },
+    [displayItem, statusFilter]
+  );
+
+  const handleSubmitForReview = useCallback(async (): Promise<boolean> => {
+    if (!displayItem || !window.electron) return false;
+    const actor = requireWorkflowUser();
+    if (!actor) return false;
+    if (autoSave) {
+      const ok = await saveCurrent();
+      if (!ok) return false;
+    }
+    const meta = await loadYoloMeta((p) => window.electron!.readJsonFile(p), displayItem.imagePath);
+    const next = transitionSubmit(meta, actor);
+    if (next.workflowStatus === meta.workflowStatus) {
+      setStatusMessage('검수 요청할 수 없는 상태입니다.');
+      return false;
+    }
+    if (await persistWorkflowMeta(next)) {
+      setStatusMessage('검수 요청됨');
+      return true;
+    }
+    return false;
+  }, [autoSave, displayItem, persistWorkflowMeta, requireWorkflowUser, saveCurrent]);
+
+  const handleApprove = useCallback(async (): Promise<boolean> => {
+    if (!displayItem || !window.electron) return false;
+    const actor = requireWorkflowUser();
+    if (!actor) return false;
+    const meta = await loadYoloMeta((p) => window.electron!.readJsonFile(p), displayItem.imagePath);
+    const next = transitionApprove(meta, actor);
+    if (next.workflowStatus === meta.workflowStatus) {
+      setStatusMessage('승인할 수 없는 상태입니다.');
+      return false;
+    }
+    if (await persistWorkflowMeta(next)) {
+      setStatusMessage('승인됨');
+      return true;
+    }
+    return false;
+  }, [displayItem, persistWorkflowMeta, requireWorkflowUser]);
+
+  const handleReject = useCallback(async () => {
+    if (!displayItem || !window.electron) return;
+    const actor = requireWorkflowUser();
+    if (!actor) return;
+    const reason = window.prompt('반려 사유를 입력하세요 (선택)');
+    if (reason === null) return;
+    const meta = await loadYoloMeta((p) => window.electron!.readJsonFile(p), displayItem.imagePath);
+    const next = transitionReject(meta, actor, reason);
+    if (next.workflowStatus === meta.workflowStatus) {
+      setStatusMessage('반려할 수 없는 상태입니다.');
+      return;
+    }
+    if (await persistWorkflowMeta(next)) {
+      setStatusMessage('반려됨');
+    }
+  }, [displayItem, persistWorkflowMeta, requireWorkflowUser]);
+
+  const labelsReadOnly = useMemo(() => {
+    if (workflowRole === 'reviewer') return true;
+    if (!displayMeta) return false;
+    return !canEditLabels(workflowRole, displayMeta.workflowStatus);
+  }, [displayMeta, workflowRole]);
+
+  const finishNavigate = useCallback(
     async (nextIndex: number) => {
       if (isBrowseFilterScanning || browseFilterLoading || navCount <= 0) return;
       if (nextIndex < 0 || nextIndex >= navCount || nextIndex === currentIndex) return;
@@ -531,19 +844,43 @@ const YoloWorkspace: React.FC = () => {
     [autoSave, browseFilterLoading, currentIndex, isBrowseFilterScanning, navCount, saveCurrent]
   );
 
+  const {
+    navPrompt,
+    navBusy,
+    navPromptRef,
+    requestNavigate,
+    handleNavCancel,
+    handleNavConfirm,
+  } = useWorkflowNavGate({
+    workflowRole,
+    workflowStatus: displayMeta?.workflowStatus,
+    currentIndex,
+    onNavigate: finishNavigate,
+    onSubmitForReview: handleSubmitForReview,
+    onApprove: handleApprove,
+  });
+
+  const goToIndex = useCallback(
+    (nextIndex: number) => {
+      void requestNavigate(nextIndex);
+    },
+    [requestNavigate]
+  );
+
   const goPrev = useCallback(() => {
-    void goToIndex(currentIndex - 1);
-  }, [currentIndex, goToIndex]);
+    void requestNavigate(currentIndex - 1);
+  }, [currentIndex, requestNavigate]);
 
   const goNext = useCallback(() => {
-    void goToIndex(currentIndex + 1);
-  }, [currentIndex, goToIndex]);
+    void requestNavigate(currentIndex + 1);
+  }, [currentIndex, requestNavigate]);
 
   const handleDeleteCurrentImage = useCallback(async () => {
     if (!window.electron || !displayItem) return;
     const msg = `현재 이미지와 해당 라벨 파일을 삭제할까요?\n이 작업은 되돌릴 수 없습니다.\n\n${displayItem.name}`;
     if (!window.confirm(msg)) return;
-    const result = await window.electron.deleteImageAndTxt(displayItem.imagePath, displayItem.txtPath);
+    const metaPath = yoloMetaPathForImage(displayItem.imagePath);
+    const result = await window.electron.deleteImageAndTxt(displayItem.imagePath, displayItem.txtPath, metaPath);
     if (!result.ok) {
       setStatusMessage('삭제 실패: ' + (result.error || '알 수 없음'));
       return;
@@ -629,6 +966,8 @@ const YoloWorkspace: React.FC = () => {
         if (currentItemRef.current) void saveCurrentRef.current();
         return;
       }
+      if (navPromptRef.current) return;
+
       if (key === 'a' || e.key === 'ArrowLeft') {
         e.preventDefault();
         e.stopPropagation();
@@ -686,7 +1025,7 @@ const YoloWorkspace: React.FC = () => {
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden" style={{ backgroundColor: 'var(--bg-deep)' }}>
       <header className="glass flex-shrink-0 border-b border-white/10 px-5 py-3 flex items-center gap-4 rounded-none overflow-visible">
         <div className="flex items-center gap-2">
-          <button type="button" onClick={handleOpenFolder} className="px-3.5 py-2 rounded-xl glass border border-white/10 text-sm font-medium transition-all hover:border-[var(--accent-blue)] hover:shadow-[0_0_20px_rgba(82,182,255,0.15)]" style={{ color: 'var(--accent-blue)' }}>폴더 (Ctrl+O)</button>
+          <button type="button" onClick={handleOpenFolder} className="px-3.5 py-2 rounded-xl glass border border-white/10 text-sm font-medium transition-all hover:border-[var(--accent-blue)] hover:shadow-[0_0_20px_rgba(82,182,255,0.15)]" style={{ color: 'var(--accent-blue)' }}>폴더 열기</button>
           <div className="relative" ref={labelMenuRef}>
             <button
               ref={labelTriggerRef}
@@ -825,6 +1164,26 @@ const YoloWorkspace: React.FC = () => {
               </button>
             </span>
           )}
+          {statusFilter !== 'all' && (
+            <span className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-amber-400/40 bg-amber-400/10 text-amber-200" title="상태 필터 적용 중">
+              상태:
+              <span>{STATUS_FILTER_OPTIONS.find((o) => o.value === statusFilter)?.label ?? statusFilter}</span>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className="ml-0.5 px-1.5 py-0.5 rounded-md hover:bg-white/10 text-slate-200"
+              >
+                해제
+              </button>
+            </span>
+          )}
+          {displayItem && displayMeta ? (
+            <span
+              className={`shrink-0 inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border ${workflowStatusBadgeClass(displayMeta.workflowStatus)}`}
+            >
+              {workflowStatusLabel(displayMeta.workflowStatus)}
+            </span>
+          ) : null}
           {displayItem ? (
             <span className="text-base font-bold font-mono truncate max-w-md min-w-0" style={{ color: 'var(--accent-lime)' }} title={displayItem.name}>{displayItem.name}</span>
           ) : (
@@ -832,6 +1191,49 @@ const YoloWorkspace: React.FC = () => {
           )}
         </div>
       </header>
+
+      <div className="glass flex-shrink-0 border-b border-white/10 px-5 py-2.5 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-slate-500 shrink-0">역할</label>
+          <select
+            value={workflowRole}
+            onChange={(e) => setWorkflowRole(e.target.value === 'reviewer' ? 'reviewer' : 'worker')}
+            className="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-white/10 text-sm text-white focus:border-[var(--accent-blue)] outline-none"
+          >
+            <option value="worker">작업자</option>
+            <option value="reviewer">검수자</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-2 min-w-[10rem]">
+          <label className="text-xs text-slate-500 shrink-0">이름</label>
+          <input
+            type="text"
+            value={workflowUser}
+            onChange={(e) => setWorkflowUser(e.target.value)}
+            placeholder="홍길동"
+            className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-white/10 text-sm text-white placeholder:text-slate-600 focus:border-[var(--accent-blue)] outline-none"
+          />
+        </div>
+        <div className="h-5 w-px bg-white/10 hidden sm:block" />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-slate-500 mr-1">상태 필터</span>
+          {STATUS_FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setStatusFilter(opt.value)}
+              disabled={imageList.length === 0 || isBrowseFilterScanning}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 ${
+                statusFilter === opt.value
+                  ? 'border-[var(--accent-blue)]/60 bg-[var(--accent-blue)]/15 text-[var(--accent-blue)]'
+                  : 'border-transparent bg-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="flex-1 flex min-h-0 overflow-hidden">
         <aside className="glass w-72 flex-shrink-0 border-r border-white/10 overflow-auto flex flex-col">
@@ -981,28 +1383,67 @@ const YoloWorkspace: React.FC = () => {
           {imageList.length > 0 && (
             <div className="mt-auto p-3 pt-2 border-t border-white/10">
               <div className="text-[11px] font-bold uppercase tracking-widest mb-1.5 text-slate-500">Goto (Ctrl+G)</div>
-              <div className="flex items-center gap-2">
-                <input
-                  ref={gotoInputRef}
-                  type="number"
-                  min={1}
-                  max={Math.max(1, navCount)}
-                  value={gotoValue}
-                  disabled={isBrowseFilterScanning || navCount === 0}
-                  onChange={(e) => setGotoValue(e.target.value.replace(/[^0-9]/g, ''))}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      const num = Math.min(navCount, Math.max(1, parseInt(gotoValue, 10) || 1));
-                      setGotoValue(String(num));
-                      void goToIndex(num - 1);
-                      gotoInputRef.current?.blur();
-                    }
-                  }}
-                  onBlur={() => setGotoValue(String(currentIndex + 1))}
-                  className="w-16 px-2 py-1.5 text-sm font-mono tabular-nums rounded-lg bg-slate-800 border border-white/10 text-white focus:border-[var(--accent-blue)] focus:ring-1 focus:ring-[var(--accent-blue)] outline-none disabled:opacity-40"
-                  title={browseFilterClassId !== null ? '필터된 목록에서 번호 입력 후 Enter' : '이미지 번호 입력 후 Enter'}
-                />
-                <span className="text-slate-500 text-sm">/ {navCount}</span>
+              <div className="flex items-start gap-2.5">
+                <div className="flex items-center gap-2 shrink-0">
+                  <input
+                    ref={gotoInputRef}
+                    type="number"
+                    min={1}
+                    max={Math.max(1, navCount)}
+                    value={gotoValue}
+                    disabled={isBrowseFilterScanning || navCount === 0}
+                    onChange={(e) => setGotoValue(e.target.value.replace(/[^0-9]/g, ''))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const num = Math.min(navCount, Math.max(1, parseInt(gotoValue, 10) || 1));
+                        setGotoValue(String(num));
+                        void goToIndex(num - 1);
+                        gotoInputRef.current?.blur();
+                      }
+                    }}
+                    onBlur={() => setGotoValue(String(currentIndex + 1))}
+                    className="w-16 px-2 py-1.5 text-sm font-mono tabular-nums rounded-lg bg-slate-800 border border-white/10 text-white focus:border-[var(--accent-blue)] focus:ring-1 focus:ring-[var(--accent-blue)] outline-none disabled:opacity-40"
+                    title={browseFilterClassId !== null ? '필터된 목록에서 번호 입력 후 Enter' : '이미지 번호 입력 후 Enter'}
+                  />
+                  <span className="text-slate-500 text-sm">/ {navCount}</span>
+                </div>
+                {displayItem && displayMeta && window.electron ? (
+                  <div className="flex flex-col gap-1 min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {workflowRole === 'worker' &&
+                        (displayMeta.workflowStatus === 'draft' || displayMeta.workflowStatus === 'rejected') && (
+                          <button
+                            type="button"
+                            onClick={() => void handleSubmitForReview()}
+                            className="px-2.5 py-1 rounded-lg text-xs font-medium border border-amber-400/50 bg-amber-400/15 text-amber-100 hover:bg-amber-400/25 transition-colors whitespace-nowrap"
+                          >
+                            {displayMeta.workflowStatus === 'rejected' ? '재검수' : '검수 요청'}
+                          </button>
+                        )}
+                      {workflowRole === 'reviewer' && displayMeta.workflowStatus === 'submitted' && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void handleApprove()}
+                            className="px-2.5 py-1 rounded-lg text-xs font-medium border border-emerald-400/50 bg-emerald-400/15 text-emerald-100 hover:bg-emerald-400/25 transition-colors"
+                          >
+                            승인
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleReject()}
+                            className="px-2.5 py-1 rounded-lg text-xs font-medium border border-red-400/50 bg-red-400/15 text-red-200 hover:bg-red-400/25 transition-colors"
+                          >
+                            반려
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    {labelsReadOnly ? (
+                      <span className="text-[11px] text-slate-500">읽기 전용</span>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </div>
           )}
@@ -1053,15 +1494,24 @@ const YoloWorkspace: React.FC = () => {
                 <p className="text-xs text-slate-500">준비 중…</p>
               )}
             </div>
-          ) : browseFilterClassId !== null && navCount === 0 ? (
+          ) : (browseFilterClassId !== null || statusFilter !== 'all') && navCount === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
               <div className="glass-card w-20 h-20 rounded-2xl flex items-center justify-center">
                 <svg className="w-10 h-10 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
               </div>
-              <p className="text-sm font-medium text-slate-300">이 클래스가 포함된 이미지가 없습니다</p>
-              <button type="button" onClick={() => setBrowseFilter(null)} className="px-4 py-2 rounded-xl glass border border-white/10 text-sm text-[var(--accent-blue)] hover:border-[var(--accent-blue)]">
-                필터 해제
-              </button>
+              <p className="text-sm font-medium text-slate-300">필터 조건에 맞는 이미지가 없습니다</p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {browseFilterClassId !== null ? (
+                  <button type="button" onClick={() => setBrowseFilter(null)} className="px-4 py-2 rounded-xl glass border border-white/10 text-sm text-[var(--accent-blue)] hover:border-[var(--accent-blue)]">
+                    클래스 필터 해제
+                  </button>
+                ) : null}
+                {statusFilter !== 'all' ? (
+                  <button type="button" onClick={() => setStatusFilter('all')} className="px-4 py-2 rounded-xl glass border border-white/10 text-sm text-[var(--accent-blue)] hover:border-[var(--accent-blue)]">
+                    상태 필터 해제
+                  </button>
+                ) : null}
+              </div>
             </div>
           ) : !currentItem ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
@@ -1085,7 +1535,7 @@ const YoloWorkspace: React.FC = () => {
                   annotations={displayAnnotations}
                   currentClass={selectedClass ?? { id: -1, name: 'None', color: '#666' }}
                   classes={classes}
-                  readOnly={false}
+                  readOnly={labelsReadOnly}
                   onUpdateAnnotations={handleUpdateAnnotations}
                   hiddenClassIds={hiddenClassIds}
                   customClassColors={customClassColors}
@@ -1123,7 +1573,21 @@ const YoloWorkspace: React.FC = () => {
             </>
           )}
         </main>
+
+        {displayItem && displayMeta ? (
+          <aside className="glass w-72 flex-shrink-0 border-l border-white/10 overflow-hidden flex flex-col min-h-0">
+            <LabelHistoryPanel history={displayMeta.changeHistory} />
+          </aside>
+        ) : null}
       </div>
+
+      <WorkflowNavigateModal
+        prompt={navPrompt}
+        itemLabel={displayItem?.name}
+        busy={navBusy}
+        onCancel={() => void handleNavCancel()}
+        onConfirm={() => void handleNavConfirm()}
+      />
 
       {/* 폴더 통계 모달 */}
       {showStatsModal && (

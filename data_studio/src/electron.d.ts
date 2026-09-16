@@ -1,10 +1,14 @@
+export type OfflineMediaKind = 'image' | 'video';
+
 export interface OfflineImageItem {
   name: string;
   imagePath: string;
   txtPath: string;
-  /** OCR 사이드카 — 이미지와 같은 경로·베이스명 `.json` */
+  /** OCR·VLM 사이드카 — 미디어와 같은 경로·베이스명 `.json` */
   jsonPath: string;
   imageUrl: string;
+  /** VLM scanMediaFolder — 영상 항목 구분 */
+  mediaType?: OfflineMediaKind;
 }
 
 export interface ReadJsonFileResult {
@@ -12,6 +16,8 @@ export interface ReadJsonFileResult {
   text?: string;
   error?: string;
 }
+
+import type { YoloDashboardSummary } from './dashboardTypes';
 
 export interface OcrDetectBox {
   text: string;
@@ -65,15 +71,18 @@ declare global {
   interface Window {
     __DATA_STUDIO_WEB__?: boolean;
     electron?: {
-      openFolderDialog: (opts?: { initialPath?: string }) => Promise<string | null>;
+      openFolderDialog: (opts?: { initialPath?: string; pickerRoot?: string }) => Promise<string | null>;
       setWorkspaceRoot: (path: string | null) => Promise<boolean>;
       /** VLM 미디어 상대 경로 기준 폴더 (null = JSON 폴더 자동) */
       setMediaBaseRoot: (path: string | null) => Promise<boolean>;
       getMediaBaseRoot: () => Promise<string | null>;
       scanFolder: (path: string) => Promise<OfflineImageItem[]>;
+      scanYoloDashboard: (detectorRoot?: string) => Promise<YoloDashboardSummary>;
+      /** VLM: 이미지 + 영상 재귀 스캔 */
+      scanMediaFolder: (path: string) => Promise<OfflineImageItem[]>;
       readTxt: (path: string) => Promise<string>;
       writeTxt: (path: string, content: string) => Promise<boolean>;
-      openLabelFileDialog: () => Promise<string | null>;
+      openLabelFileDialog: (opts?: { initialPath?: string; pickerRoot?: string }) => Promise<string | null>;
       readLabelFile: (path: string) => Promise<string>;
       showItemInFolder: (path: string) => Promise<void>;
       deleteImageAndTxt: (

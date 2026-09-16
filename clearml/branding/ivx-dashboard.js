@@ -26,6 +26,15 @@
     return /^\/projects\/[^/]+(\/projects)?\/?$/.test(path || location.pathname);
   }
 
+  function isDatasetsRoute(path) {
+    return /^\/datasets\/simple\/[^/]+\/datasets/.test(path || location.pathname);
+  }
+
+  function datasetProjectIdFromPath(path) {
+    var m = (path || location.pathname).match(/^\/datasets\/simple\/([^/]+)\/datasets/);
+    return m ? m[1] : '';
+  }
+
   function projectIdFromPath(path) {
     var m = (path || location.pathname).match(/^\/projects\/([^/]+)/);
     return m ? m[1] : '';
@@ -33,6 +42,11 @@
 
   function normName(name) {
     return (name || '').trim();
+  }
+
+  function projectRefId(value) {
+    if (typeof value === 'string') return value;
+    return value && typeof value.id === 'string' ? value.id : '';
   }
 
   function escRegex(s) {
@@ -45,6 +59,24 @@
     return idx > 0 ? n.substring(0, idx) : '';
   }
 
+  function rootProjectIdFor(project) {
+    if (!project || !project.id) return '';
+    var name = normName(project.name || project.basename);
+    var rootName = rootNameFromDatasetPath(name);
+    if (rootName) {
+      if (datasetRootByName[rootName]) return datasetRootByName[rootName];
+      if (projectByName[rootName] && projectByName[rootName].id) {
+        return projectByName[rootName].id;
+      }
+      if (projectRefId(project.parent)) return projectRefId(project.parent);
+    }
+    if (datasetRootByName[name]) return datasetRootByName[name];
+    if (projectByName[name + '/.datasets']) {
+      return project.id;
+    }
+    return project.id;
+  }
+
   function loadStoredRoots() {
     try {
       var raw = sessionStorage.getItem(STORAGE_KEY);
@@ -52,7 +84,8 @@
       var stored = JSON.parse(raw);
       if (stored && typeof stored === 'object') {
         Object.keys(stored).forEach(function (name) {
-          if (stored[name]) datasetRootByName[name] = stored[name];
+          var storedId = projectRefId(stored[name]);
+          if (storedId) datasetRootByName[name] = storedId;
         });
       }
     } catch (err) {}
@@ -77,7 +110,7 @@
 
       var rootFromPath = rootNameFromDatasetPath(p.name);
       if (rootFromPath) {
-        var rootId = (p.path && p.path.length && p.path[0]) || p.parent || '';
+        var rootId = projectRefId(p.path && p.path.length && p.path[0]) || projectRefId(p.parent);
         if (rootId && datasetRootByName[rootFromPath] !== rootId) {
           datasetRootByName[rootFromPath] = rootId;
           changed = true;
@@ -99,7 +132,7 @@
       var p = projectById[id];
       if (!p.name || p.name.indexOf('/.datasets') === -1) return;
       var root = rootNameFromDatasetPath(p.name);
-      var rootId = (p.path && p.path[0]) || '';
+      var rootId = projectRefId(p.path && p.path[0]) || projectRefId(p.parent);
       if (root && rootId && datasetRootByName[root] !== rootId) {
         datasetRootByName[root] = rootId;
         changed = true;
@@ -276,14 +309,21 @@
 
   function resolveDatasetId(name, id) {
     var n = normName(name);
-    if (n && datasetRootByName[n]) return datasetRootByName[n];
+    if (n && datasetRootByName[n]) return projectRefId(datasetRootByName[n]);
 
-    if (id && projectById[id] && isDatasetRootProject(projectById[id])) return id;
+    if (id && projectById[id]) {
+      var byId = projectById[id];
+      var rootFromId = rootProjectIdFor(byId);
+      if (rootFromId && rootFromId !== id && rootNameFromDatasetPath(byId.name)) {
+        return rootFromId;
+      }
+      if (isDatasetRootProject(byId)) return rootFromId || id;
+    }
 
     if (n) {
       if (projectByName[n + '/.datasets']) {
         var child = projectByName[n + '/.datasets'];
-        return (child.path && child.path[0]) || datasetRootByName[n] || '';
+        return projectRefId(child.path && child.path[0]) || projectRefId(datasetRootByName[n]);
       }
 
       var exact = projectByName[n];
@@ -295,7 +335,7 @@
         var pn = keys[i];
         if (pn === prefix || pn.indexOf(prefix + '/') === 0) {
           var c = projectByName[pn];
-          var rootId = (c.path && c.path[0]) || datasetRootByName[n] || '';
+          var rootId = projectRefId(c.path && c.path[0]) || projectRefId(datasetRootByName[n]);
           if (rootId) return rootId;
         }
       }
@@ -375,18 +415,31 @@
     window.location.assign('/projects/' + encodeURIComponent(projectId));
   }
 
-  function guardProjectRoute() {
-    if (redirecting || !isProjectRoute()) return;
+  function guardDatasetViewRoute() {
+    if (redirecting) return;
 
-    var id = projectIdFromPath();
-    if (!id) return;
+    var id = '';
+    var datasetName = null;
+    var targetUrl = '';
 
-    fetchDatasetRootId(null, id).then(function (resolved) {
+    if (/^\/datasets\/?$/.test(location.pathname) || /^\/datasets\/simple\/(?:\*|%2a)\/projects\/?$/i.test(location.pathname)) {
+      datasetName = 'Dataset';
+    } else if (isProjectRoute()) {
+      id = projectIdFromPath();
+    } else if (isDatasetsRoute()) {
+      id = datasetProjectIdFromPath();
+    } else {
+      return;
+    }
+
+    if (!id && !datasetName) return;
+
+    fetchDatasetRootId(datasetName, id).then(function (resolved) {
       if (!resolved) return;
-      var url = datasetsUrl(resolved);
-      if (location.pathname !== url) {
+      targetUrl = datasetsUrl(resolved);
+      if (location.pathname !== targetUrl) {
         redirecting = true;
-        window.location.replace(url);
+        window.location.replace(targetUrl);
       }
     });
   }
@@ -395,7 +448,7 @@
     var original = history[method].bind(history);
     history[method] = function (state, title, url) {
       original(state, title, url);
-      guardProjectRoute();
+      guardDatasetViewRoute();
     };
   }
 
@@ -523,15 +576,15 @@
   patchHistoryMethod('replaceState');
   patchLocationMethod('assign');
   patchLocationMethod('replace');
-  window.addEventListener('popstate', guardProjectRoute);
+  window.addEventListener('popstate', guardDatasetViewRoute);
   document.addEventListener('click', handleProjectCardClick, true);
 
   prefetchDatasetRoots();
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', guardProjectRoute);
+    document.addEventListener('DOMContentLoaded', guardDatasetViewRoute);
   } else {
-    guardProjectRoute();
+    guardDatasetViewRoute();
   }
 
   var lastPath = location.pathname;
@@ -539,7 +592,155 @@
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
       redirecting = false;
-      guardProjectRoute();
+      guardDatasetViewRoute();
     }
   }, 250);
+})();
+
+/* Training server monitor: attach after Angular creates the dashboard. */
+(function () {
+  if (window.__ivxTrainingMonitor) return;
+  window.__ivxTrainingMonitor = true;
+  var panel, banner, timer, controller, generation = 0;
+  var style = document.createElement('style');
+  style.textContent = `
+    body.ivx-monitor-active {padding-top:80px!important;box-sizing:border-box}
+    body.ivx-monitor-active sm-root {height:calc(100vh - 80px)!important}
+    #ivx-training-banner {position:fixed;inset:0 0 auto;height:80px;box-sizing:border-box;background:#181c24;color:#fff;padding:16px;z-index:1000;font:14px Heebo,sans-serif}
+    #ivx-training-banner strong {font-size:14px} #ivx-training-status {float:right;font-size:12px;color:#8ee0b1}
+    #ivx-training-detail {font-size:12px;margin-top:12px;color:#dce3ee}
+    body.ivx-monitor-active sm-dashboard-reports {display:none!important}
+    body.ivx-monitor-active sm-dashboard-experiments {height:auto!important;min-height:310px;padding-top:12px!important}
+    body.ivx-monitor-active sm-dashboard-experiments [header-buttons] {display:none!important}
+    body.ivx-monitor-active sm-show-only-user-work-menu.ivx-team-work-label {display:inline-flex;align-items:center;pointer-events:none;cursor:default}
+    body.ivx-monitor-active sm-show-only-user-work-menu.ivx-team-work-label > sm-menu {display:none!important}
+    .ivx-team-work-static {display:inline-flex;align-items:center;gap:7px;color:var(--color-on-surface);font:500 13px Heebo,sans-serif;white-space:nowrap}
+    .ivx-team-work-static i {font-size:15px;color:var(--color-primary)}
+    #ivx-training-server-panel {box-sizing:border-box;margin:18px auto 0;color:var(--color-on-surface,#172033);font-family:Heebo,sans-serif}
+    #ivx-training-server-panel h2 {font:500 16px Heebo,sans-serif;color:var(--color-primary);margin:0 0 16px;line-height:24px}
+    .ivx-metric-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+    .ivx-metric-card {padding:20px 24px 18px;border:1px solid color-mix(in srgb,var(--color-on-surface) 10%,transparent);border-radius:14px;background:color-mix(in srgb,var(--color-primary) 3%,var(--color-surface));box-shadow:0 3px 12px rgba(0,0,0,.025)}
+    .ivx-metric-label {font:500 16px Heebo,sans-serif;color:var(--color-primary);margin-bottom:14px;line-height:24px}
+    .ivx-gauge {position:relative;width:160px;height:160px;margin:0 auto}
+    .ivx-gauge svg {width:100%;height:100%;transform:rotate(-90deg)}
+    .ivx-gauge circle {fill:none;stroke-width:9}
+    .ivx-gauge circle:first-of-type {stroke:color-mix(in srgb,var(--color-primary) 12%,var(--color-surface))}
+    .ivx-progress {transition:stroke-dasharray .65s ease,opacity .3s ease}
+    @media(prefers-reduced-motion:reduce){.ivx-progress{transition:none}}
+    .ivx-gauge-value {position:absolute;inset:0;display:grid;place-items:center;font-size:34px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-1px}
+    .ivx-metric-total {text-align:center;margin-top:14px;font-size:13px;min-height:20px;color:var(--color-on-surface-variant);font-variant-numeric:tabular-nums}
+    .ivx-gpu-gauges {display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:12px;align-items:start}
+    .ivx-gpu-unit {min-width:0;text-align:center}.ivx-gpu-unit .ivx-gauge{width:122px;height:122px}
+    .ivx-gpu-name {font-size:13px;font-weight:600;margin-bottom:7px}.ivx-gpu-detail {font-size:11px;color:var(--color-on-surface-variant);margin-top:7px;white-space:nowrap}
+    .ivx-gpu-empty {height:160px;display:grid;place-items:center;color:var(--color-on-surface-variant)}
+    @media(max-width:650px){.ivx-metric-grid{grid-template-columns:1fr}.ivx-gauge{width:130px;height:130px}#ivx-training-status{float:none;display:block;margin-top:5px}#ivx-training-banner{padding:10px}#ivx-training-detail{margin-top:5px}}
+  `;
+  document.head.appendChild(style);
+  function number(value) { return typeof value === 'number' && Number.isFinite(value) ? value : null; }
+  function gauge(id, label) {
+    return '<div class="ivx-gauge" role="img" aria-label="'+label+'"><svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="ivx-gradient-'+id+'"><stop stop-color="#2166a2"/><stop offset="1" stop-color="#52bbef"/></linearGradient></defs><circle cx="60" cy="60" r="50" stroke="#d3e3fa"/><circle class="ivx-progress" cx="60" cy="60" r="50" stroke="url(#ivx-gradient-'+id+')" stroke-linecap="round" stroke-dasharray="0 314.159"/></svg><span class="ivx-gauge-value">—</span></div>';
+  }
+  function card(label, id) {
+    return '<div class="ivx-metric-card" data-metric="'+id+'"><div class="ivx-metric-label">'+label+'</div>'+gauge(id,label)+'<div class="ivx-metric-total">Total: —</div></div>';
+  }
+  function gpuCard() {
+    return '<div class="ivx-metric-card ivx-gpu-card" data-metric="gpu"><div class="ivx-metric-label">GPU usage</div><div class="ivx-gpu-gauges"><div class="ivx-gpu-empty">GPU 상태 대기 중</div></div><div class="ivx-metric-total">Total: —</div></div>';
+  }
+  function gpuUnit(g, i) {
+    var index=number(g.index);if(index===null)index=i;
+    return '<div class="ivx-gpu-unit" data-gpu="'+index+'"><div class="ivx-gpu-name">GPU '+index+'</div>'+gauge('gpu-'+index,'GPU '+index+' usage')+'<div class="ivx-gpu-detail"></div></div>';
+  }
+  function updateGauge(el, value, aria) {
+    var pct=value===null?null:Math.max(0,Math.min(100,value)),label=pct===null?'—':Math.round(pct)+'%';
+    el.querySelector('.ivx-gauge-value').textContent=label;
+    el.querySelector('.ivx-progress').style.opacity=pct>0?'1':'0';
+    el.querySelector('.ivx-progress').setAttribute('stroke-dasharray',(pct===null?0:pct*3.14159)+' 314.159');
+    el.querySelector('.ivx-gauge').setAttribute('aria-label',aria+': '+(pct===null?'unavailable':label));
+  }
+  function render(data) {
+    if (!panel || !panel.isConnected) return;
+    var timestamp = number(data.updated_at) || number(data.timestamp);
+    var stale = !timestamp || Date.now()/1000 - timestamp > 20;
+    var live = data.ok === true && !stale;
+    var status = banner.querySelector('#ivx-training-status');
+    status.textContent = live ? 'LIVE · 5초마다 갱신' : (data.ok === false ? '연결 실패' : '데이터 지연');
+    status.style.color = live ? '#8ee0b1' : '#ff9b9b';
+    banner.querySelector('#ivx-training-detail').textContent = data.error || (timestamp ? '마지막 수집: '+new Date(timestamp*1000).toLocaleString() : '학습 서버 응답 대기 중');
+    var memory = data.memory || {}, gpus = Array.isArray(data.gpus) ? data.gpus : [];
+    var gpuCardEl=panel.querySelector('[data-metric="gpu"]'),gpuList=gpuCardEl.querySelector('.ivx-gpu-gauges');
+    var signature=gpus.map(function(g,i){return number(g.index)===null?i:g.index}).join(',');
+    if(gpuList.dataset.signature!==signature){
+      gpuList.innerHTML=gpus.length?gpus.map(gpuUnit).join(''):'<div class="ivx-gpu-empty">GPU 정보를 사용할 수 없습니다.</div>';
+      gpuList.dataset.signature=signature;
+    }
+    gpus.forEach(function(g,i){
+      var index=number(g.index);if(index===null)index=i;
+      var unit=gpuList.querySelector('[data-gpu="'+index+'"]'),usage=live?number(g.utilization_percent):null;
+      if(!unit)return;updateGauge(unit,usage,'GPU '+index+' usage');
+      var used=number(g.memory_used_mb),total=number(g.memory_total_mb),temp=number(g.temperature_c);
+      unit.querySelector('.ivx-gpu-detail').textContent=(used===null||total===null?'VRAM —':Math.round(used)+' / '+Math.round(total)+' MB')+(temp===null?'':' · '+Math.round(temp)+'°C');
+    });
+    gpuCardEl.querySelector('.ivx-metric-total').textContent='Total: '+(data.ok===true&&!data.gpu_error?gpus.length+' GPUs':'—');
+    var cpu=live?number(data.cpu_percent):null;
+    var mem=live&&number(memory.total_bytes)>0&&number(memory.used_bytes)!==null?memory.used_bytes/memory.total_bytes*100:null;
+    var cores=number(data.cpu_count)||number(data.cpu_cores),cpuEl=panel.querySelector('[data-metric="cpu"]'),memEl=panel.querySelector('[data-metric="memory"]');
+    updateGauge(cpuEl,cpu,'CPU usage');updateGauge(memEl,mem,'Memory usage');
+    cpuEl.querySelector('.ivx-metric-total').textContent='Total: '+(cores?cores+' Cores':'—');
+    memEl.querySelector('.ivx-metric-total').textContent='Total: '+(number(memory.total_bytes)>0?Math.round(memory.total_bytes/1073741824)+' GB RAM':'—');
+  }
+  async function poll() {
+    if (!panel || !panel.isConnected || controller) return;
+    var run = generation;
+    controller = new AbortController();
+    var timeout = setTimeout(function(){if(controller) controller.abort()},4500);
+    try {
+      var response = await fetch('/training-metrics.json?t='+Date.now(), {cache:'no-store',credentials:'same-origin',signal:controller.signal});
+      if (!response.ok) throw new Error('HTTP '+response.status);
+      var data = await response.json();
+      if (run === generation) render(data || {});
+    } catch(error) {
+      if (run === generation) render({ok:false,error:'지표를 불러오지 못했습니다: '+error.message});
+    } finally {clearTimeout(timeout);controller=null;}
+  }
+  function normalizeTeamWork() {
+    var host=document.querySelector('sm-show-only-user-work-menu');
+    if(!host)return;
+    host.classList.add('ivx-team-work-label');
+    if(!host.querySelector('.ivx-team-work-static')){
+      var label=document.createElement('span');label.className='ivx-team-work-static';label.setAttribute('aria-label',"Team's Work");label.innerHTML='<i class="al-ico-users" aria-hidden="true"></i><span>Team&amp;#39;s Work</span>';
+      label.lastElementChild.textContent="Team's Work";host.appendChild(label);
+    }
+  }
+  function sync() {
+    normalizeTeamWork();
+    var dashboard = /^\/dashboard\/?$/.test(location.pathname) && document.querySelector('sm-dashboard');
+    var projects = dashboard && dashboard.querySelector('sm-dashboard-projects');
+    var tasks = dashboard && dashboard.querySelector('sm-dashboard-experiments');
+    if (!projects || !tasks) {
+      if (panel) {generation++;clearInterval(timer);timer=null;panel.remove();banner.remove();panel=banner=null;document.body.classList.remove('ivx-monitor-active');if(controller)controller.abort();}
+      return;
+    }
+    if (!panel || !panel.isConnected) {
+      if (banner) banner.remove();
+      panel=document.createElement('section');panel.id='ivx-training-server-panel';
+      panel.innerHTML='<h2>TRAINING SERVER METRICS</h2><div class="ivx-metric-grid">'+gpuCard()+card('CPU usage','cpu')+card('Memory usage','memory')+'</div>';
+      tasks.parentNode.insertBefore(panel,tasks);
+      banner=document.createElement('header');banner.id='ivx-training-banner';
+      banner.innerHTML='<strong>TRAINING SERVER · 172.16.4.83</strong><span id="ivx-training-status">연결 확인 중</span><div id="ivx-training-detail">학습 서버 응답 대기 중</div>';
+      document.body.prepend(banner);document.body.classList.add('ivx-monitor-active');
+      clearInterval(timer);poll();timer=setInterval(poll,5000);
+    }
+    var title=tasks.querySelector('.recent-title');
+    if(title){
+      var typography=getComputedStyle(title);
+      panel.querySelectorAll('h2,.ivx-metric-label').forEach(function(el){
+        if(el.style.font!==typography.font)el.style.font=typography.font;
+        if(el.style.color!==typography.color)el.style.color=typography.color;
+      });
+    }
+    var width=tasks.getBoundingClientRect().width;
+    if(width && panel.style.width!==width+'px')panel.style.width=width+'px';
+  }
+  function boot(){new MutationObserver(sync).observe(document.body,{childList:true,subtree:true});window.addEventListener('resize',sync);window.addEventListener('popstate',sync);setInterval(sync,500);sync();}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();

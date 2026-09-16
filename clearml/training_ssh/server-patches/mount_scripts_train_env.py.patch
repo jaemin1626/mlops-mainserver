@@ -1,0 +1,10 @@
+--- mount/scripts/train_env.py
++++ mount/scripts/train_env.py
+@@ -203,6 +203,7 @@
+         'IMGSZ', 'LEARNING_RATE', 'GRAD_ACCUM', 'MAX_SEQ_LENGTH',
+         'TRAIN_JSON', 'VAL_JSON', 'TRAIN_MODE', 'TRAIN_MODALITY',
+         'IMAGE_MODEL', 'VIDEO_MODEL', 'BOTH_MODEL',
++        'LORA_R', 'LORA_ALPHA', 'LORA_DROPOUT', 'LORA_TARGET_MODULES', 'GRADIENT_CHECKPOINTING', 'VIDEO_FPS', 'VIDEO_MAX_PIXELS', 'VALID_RATIO', 'VALID_SPLIT_SEED', 'MAX_SAMPLES', 'EVAL_STEPS', 'LOGGING_STEPS', 'SAVE_STEPS', 'SAVE_TOTAL_LIMIT',
+     }
+     if project in {'detector', 'vlm'}:
+         for key in os.environ.get('TRAIN_OVERRIDE_KEYS', '').split(','):

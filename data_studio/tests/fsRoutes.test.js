@@ -111,6 +111,21 @@ test('PUT writes valid .json content under an allowed root', async () => {
   assert.equal(fs.readFileSync(labelPath, 'utf8'), content);
 });
 
+test('GET dashboard/yolo-summary aggregates detector subfolders', async () => {
+  const detector = path.join(root, 'detector');
+  const fire = path.join(detector, 'Fire');
+  fs.mkdirSync(fire, { recursive: true });
+  fs.writeFileSync(path.join(fire, '001.jpg'), 'jpg');
+  fs.writeFileSync(path.join(fire, '001.txt'), '0 0.1 0.2 0.3 0.4');
+
+  const response = await fetch(`${baseUrl}/dashboard/yolo-summary?root=${encodeURIComponent(detector)}`);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.folders.length, 1);
+  assert.equal(body.folders[0].folderName, 'Fire');
+  assert.equal(body.totals.totalImages, 1);
+});
+
 test('GET fs/file serves video with correct content type and range support', async () => {
   const videoPath = path.join(root, 'sample.mp4');
   fs.writeFileSync(videoPath, Buffer.from('fake-mp4-bytes'));

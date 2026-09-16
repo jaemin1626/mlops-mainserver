@@ -1,0 +1,31 @@
+--- /home/intellivix/train/Detector/scripts/train/train_clearml.py
++++ /home/intellivix/train/Detector/scripts/train/train_clearml.py
+@@ -4,6 +4,7 @@
+ from __future__ import annotations
+ 
+ import os
++import signal
+ import sys
+ import zipfile
+ from pathlib import Path
+@@ -199,6 +200,20 @@
+     runs_base = train_runs_base()
+ 
+     task = Task.init(project_name=project_name, task_name=task_name)
++    # Docker stop sends SIGTERM; report the task state before exiting.
++    training_pid = os.getpid()
++    def stop_training(signum, _frame):
++        if os.getpid() == training_pid:
++            try:
++                task.stopped(ignore_errors=False, force=True,
++                             status_reason="MLOps user stopped training",
++                             status_message="Training container received a stop signal")
++                print(f"ClearML task stopped: {task.id}", flush=True)
++            except Exception as exc:
++                print(f"ClearML stop status update failed: {exc}", file=sys.stderr, flush=True)
++        os._exit(128 + signum)
++    signal.signal(signal.SIGTERM, stop_training)
++    signal.signal(signal.SIGINT, stop_training)
+     task.set_parameter("model_variant", model_variant)
+     task.set_parameter("model_path", str(model_path))
+ 

@@ -20,6 +20,9 @@ data_studio/release/
 data_studio/.env
 data_studio/.env.*
 
+# ── ComfyUI_seoul (runtime) ──
+ComfyUI_seoul/data/
+
 # ── common ──
 **/__pycache__/
 **/*.pyc
@@ -29,3 +32,6 @@ data_studio/.env.*
 **/.env
 **/.env.*
 !**/.env.example
+
+# Training SSH credentials (runtime only)
+clearml/ssh/

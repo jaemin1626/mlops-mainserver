@@ -1,0 +1,141 @@
+--- app.js
++++ app.js
+@@ -1,64 +1,74 @@
+-(() => {
+-'use strict';
+-const form=document.querySelector('#train-form'), $=s=>document.querySelector(s), fields=form.elements;
+-let model='detector',tab='yaml',ready=false,busy=false,jobTimer,checking=false;
+-const selectedDatasets=[];
+-const drafts={}, API='/training-api', DATASET_ROOT='/opt/clearml/data/datasets/detector', RUN_ROOT='/home/intellivix/train/Detector/runs/Detector/';
+-function payload(){
+- const v=Object.fromEntries(new FormData(form));
+- if(model==='detector'){ const folder=String(v.dataset||''); v.dataset=folder.startsWith(DATASET_ROOT)?folder:(folder?DATASET_ROOT+'/'+folder:''); v.output=RUN_ROOT+'/'+String(v.output_name||'experiment-01'); v.base_model=v.detector_base_model||'small.pt'; delete v.output_name; delete v.detector_base_model; delete v.vlm_base_model; } else { v.base_model=v.vlm_base_model||''; v.output=v.output_vlm||''; delete v.vlm_base_model; delete v.output_vlm; delete v.output_name; delete v.detector_base_model; }
+- for(const k of ['epochs','batch_size','learning_rate','sequence_length','lora_rank','lora_alpha','lora_dropout'])v[k]=Number(v[k]);
+- v.resume=fields.resume.checked;v.lora_enabled=model==='vlm'&&fields.lora_enabled.checked;
+- v.classes=v.classes.split(/[,\n]/).map(s=>s.trim()).filter(Boolean);v.model=model;
+- if(model!=='vlm')for(const k of ['sequence_length','precision','lora_rank','lora_alpha','lora_dropout'])delete v[k];
+- return v;
+-}
+-function preview(){
+- const v=payload(),yaml=['# Dataset configuration preview','path: '+JSON.stringify(v.dataset),'train: '+JSON.stringify(v.train_path),'val: '+JSON.stringify(v.val_path),'nc: '+v.classes.length,'names: '+JSON.stringify(v.classes)].join('\n');
+- $('#config-preview').textContent=tab==='yaml'?yaml:JSON.stringify(v,null,2);$('#model-tag').textContent=model.toUpperCase();
+- $('#lora-fields').hidden=!fields.lora_enabled.checked;
+- drafts[model]=Object.fromEntries(new FormData(form));drafts[model].resume=fields.resume.checked;drafts[model].lora_enabled=fields.lora_enabled.checked;
+- try{sessionStorage.setItem('ivx-training-drafts-v1',JSON.stringify(drafts));}catch(_){}
+-}
+-function choose(next){
+- model=next;form.reset();
+- fields.dataset.placeholder=next==='vlm'?'/workspace/Dataset/vlm':DATASET_ROOT+'/폴더명';
+- document.querySelectorAll('.detector-only').forEach(el=>el.hidden=next!=='detector'); document.querySelectorAll('.vlm-only').forEach(el=>el.hidden=next!=='vlm'); fields.output_name.required=next==='detector'; if(fields.detector_base_model)fields.detector_base_model.required=next==='detector'; if(fields.vlm_base_model)fields.vlm_base_model.required=next==='vlm';
+- if(drafts[next])Object.entries(drafts[next]).forEach(([k,v])=>{if(fields[k]){if(fields[k].type==='checkbox')fields[k].checked=Boolean(v);else fields[k].value=v;}});
+- document.querySelectorAll('[data-model]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.model===next)));preview();
+-}
+-try{Object.assign(drafts,JSON.parse(sessionStorage.getItem('ivx-training-drafts-v1')||'{}'));}catch(_){}
+-document.querySelectorAll('[data-model]').forEach(b=>b.onclick=()=>choose(b.dataset.model));form.addEventListener('input',preview);
+-function today(){const d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');}
+-async function loadResources(){let list=[];try{const data=await request('/detector/datasets');list=Array.isArray(data)?data:(data.items||data.datasets||[]);}catch(_){try{list=await (await fetch('/train/datasets.json?ts='+Date.now(),{cache:'no-store'})).json();}catch(__){list=['/opt/clearml/data/datasets/detector/generated','/opt/clearml/data/datasets/detector/testset','/opt/clearml/data/datasets/detector/trainset'];}}const el=$('#dataset-folder-select');el.innerHTML='<option value="">폴더를 선택하세요</option>';list.forEach(x=>{const path=String(x.path||x);const o=document.createElement('option');o.value=path;const rel=path.replace(DATASET_ROOT+'/','');const depth=rel.split('/').length-1;o.textContent=('　'.repeat(depth)+'📁 '+rel);el.appendChild(o);});}
+-function renderDatasets(){const box=$('#selected-datasets');box.innerHTML='';selectedDatasets.forEach((path,i)=>{const chip=document.createElement('span');chip.className='dataset-chip';chip.innerHTML='<span>'+path.replace(DATASET_ROOT+'/','')+'</span><button type="button" data-index="'+i+'" aria-label="'+path+' 제거">×</button>';box.appendChild(chip);});$('#dataset-path').value=selectedDatasets.join(',');}
+-$('#add-dataset').onclick=()=>{const path=$('#dataset-folder-select').value;if(!path||selectedDatasets.includes(path))return;selectedDatasets.push(path);renderDatasets();$('#dataset-folder-select').value='';preview();};
+-$('#selected-datasets').onclick=e=>{const b=e.target.closest('button[data-index]');if(!b)return;selectedDatasets.splice(Number(b.dataset.index),1);renderDatasets();preview();};
+-$('#generate-annotations').onclick=async()=>{if(!selectedDatasets.length){$('#annotation-status').textContent='먼저 데이터셋 폴더를 하나 이상 추가하세요.';return;}const day=today();const roots=selectedDatasets.map(p=>p.startsWith(DATASET_ROOT)?p:DATASET_ROOT+'/'+p);fields.dataset.value=roots.join(',');fields.train_path.value=day+'/train.json';fields.val_path.value=day+'/val.json';$('#annotation-status').textContent=selectedDatasets.length+'개 데이터셋 annotation 생성 완료 · '+day+'/train.json · '+day+'/val.json';preview();};
+-$('#refresh-datasets').onclick=loadResources;$('#refresh-checkpoints').onclick=loadResources;
+-
+-function selectTab(t){tab=t;$('#yaml-tab').setAttribute('aria-selected',String(t==='yaml'));$('#request-tab').setAttribute('aria-selected',String(t==='request'));preview();}
+-$('#yaml-tab').onclick=()=>selectTab('yaml');$('#request-tab').onclick=()=>selectTab('request');
+-$('#download').onclick=()=>{if(!form.reportValidity())return;const url=URL.createObjectURL(new Blob([JSON.stringify(payload(),null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='training-'+model+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+-async function request(path,options={}){
+- const r=await fetch(API+path,{credentials:'same-origin',...options,signal:AbortSignal.timeout(10000)});
+- if(!r.headers.get('content-type')?.includes('application/json'))throw Error('학습 실행 API가 아직 연결되지 않았습니다.');
+- const data=await r.json();if(!r.ok)throw Error(data.error||data.detail||'서버 요청 실패');return data;
+-}
+-async function connect(){try{const c=await request('/capabilities');ready=c.launch===true;$('#connection').textContent=ready?'● 실행 API 연결됨':'설정 작성 가능 · 실행 API 연결 대기';}catch(e){ready=false;$('#connection').textContent='설정 작성·저장 가능 · 실행 API 미연결';}}
+-form.onsubmit=async e=>{
+- e.preventDefault();if(busy||checking)return;
+- if(!ready){checking=true;await connect();checking=false;if(!ready){$('#job-state').textContent='연결 필요';$('#logs').textContent='실행 API가 연결되지 않아 학습을 시작하지 않았습니다. 설정 저장으로 요청 JSON을 내려받을 수 있습니다.';return;}}
+- busy=true;$('#launch').disabled=true;$('#job-state').textContent='요청 중';
+- try{
+-  const job=await request('/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())});if(!job.id)throw Error('서버가 작업 ID를 반환하지 않았습니다.');
+-  $('#job-id').textContent=String(job.id);$('#logs').textContent='학습 요청이 접수되었습니다.';
+-  let done=false,polling=false;
+-  const update=async()=>{if(polling||done)return;polling=true;try{const j=await request('/jobs/'+encodeURIComponent(job.id));$('#job-state').textContent=j.status||'확인 중';$('#logs').textContent=String(j.logs||'로그 대기 중');if(typeof j.progress==='number')$('#progress').value=Math.max(0,Math.min(100,j.progress));else $('#progress').removeAttribute('value');if(['completed','failed','stopped'].includes(j.status)){done=true;clearTimeout(jobTimer);busy=false;$('#launch').disabled=false;}}catch(err){$('#logs').textContent=err.message;}finally{polling=false;if(!done)jobTimer=setTimeout(update,5000);}};
+-  clearTimeout(jobTimer);await update();
+- }catch(err){$('#job-state').textContent='요청 실패';$('#logs').textContent=err.message;busy=false;$('#launch').disabled=false;}
+-};
+-document.querySelector('.close').onclick=e=>{if(window.parent!==window){e.preventDefault();window.parent.postMessage({type:'ivx-close-train'},location.origin);}};
+-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&window.parent!==window){e.preventDefault();window.parent.postMessage({type:'ivx-close-train'},location.origin);}});
+-window.addEventListener('pagehide',()=>clearTimeout(jobTimer));choose(model);connect();loadResources();
+-})();
++(() => {
++'use strict';
++const form=document.querySelector('#train-form'), $=s=>document.querySelector(s), fields=form.elements;
++let model='detector',tab='yaml',ready=false,busy=false,jobTimer,checking=false;
++const selectedDatasets=[];
++const drafts={}, API='/training-api', DATASET_ROOT='/opt/clearml/data/datasets/detector', RUN_ROOT='/home/intellivix/train/Detector/runs/Detector/';
++function payload(){
++ const v=Object.fromEntries(new FormData(form));
++ if(model==='detector'){ const folder=String(v.dataset||''); v.dataset=folder.startsWith(DATASET_ROOT)?folder:(folder?DATASET_ROOT+'/'+folder:''); v.output=RUN_ROOT+'/'+String(v.output_name||'experiment-01'); v.base_model=v.detector_base_model||'small.pt'; delete v.output_name; delete v.detector_base_model; delete v.vlm_base_model; } else { v.base_model=v.vlm_base_model||''; v.output=v.output_vlm||''; delete v.vlm_base_model; delete v.output_vlm; delete v.output_name; delete v.detector_base_model; }
++ for(const k of ['epochs','batch_size','learning_rate','sequence_length','lora_rank','lora_alpha','lora_dropout'])v[k]=Number(v[k]);
++ v.resume=fields.resume.checked;v.lora_enabled=model==='vlm'&&fields.lora_enabled.checked;
++ v.classes=v.classes.split(/[,\n]/).map(s=>s.trim()).filter(Boolean);v.model=model;
++ if(model!=='vlm')for(const k of ['sequence_length','precision','lora_rank','lora_alpha','lora_dropout'])delete v[k];
++ return v;
++}
++function preview(){
++ const v=payload(),yaml=['# Dataset configuration preview','path: '+JSON.stringify(v.dataset),'train: '+JSON.stringify(v.train_path),'val: '+JSON.stringify(v.val_path),'nc: '+v.classes.length,'names: '+JSON.stringify(v.classes)].join('\n');
++ $('#config-preview').textContent=tab==='yaml'?yaml:JSON.stringify(v,null,2);$('#model-tag').textContent=model.toUpperCase();
++ $('#lora-fields').hidden=!fields.lora_enabled.checked;
++ drafts[model]=Object.fromEntries(new FormData(form));drafts[model].resume=fields.resume.checked;drafts[model].lora_enabled=fields.lora_enabled.checked;
++ try{sessionStorage.setItem('ivx-training-drafts-v1',JSON.stringify(drafts));}catch(_){}
++}
++function choose(next){
++ model=next;form.reset();
++ fields.dataset.placeholder=next==='vlm'?'/workspace/Dataset/vlm':DATASET_ROOT+'/폴더명';
++ document.querySelectorAll('.detector-only').forEach(el=>el.hidden=next!=='detector'); document.querySelectorAll('.vlm-only').forEach(el=>el.hidden=next!=='vlm'); fields.output_name.required=next==='detector'; if(fields.detector_base_model)fields.detector_base_model.required=next==='detector'; if(fields.vlm_base_model)fields.vlm_base_model.required=next==='vlm';
++ if(drafts[next])Object.entries(drafts[next]).forEach(([k,v])=>{if(fields[k]){if(fields[k].type==='checkbox')fields[k].checked=Boolean(v);else fields[k].value=v;}});
++ document.querySelectorAll('[data-model]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.model===next)));preview();
++}
++try{Object.assign(drafts,JSON.parse(sessionStorage.getItem('ivx-training-drafts-v1')||'{}'));}catch(_){}
++document.querySelectorAll('[data-model]').forEach(b=>b.onclick=()=>choose(b.dataset.model));form.addEventListener('input',preview);
++function today(){const d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');}
++async function loadResources(){try{const data=await request('/detector/datasets');const el=$('#dataset-folder-select');el.replaceChildren(new Option('폴더를 선택하세요',''));data.items.forEach(path=>el.add(new Option('📁 '+path,path)));}catch(e){$('#annotation-status').textContent=e.message;}}
++function renderDatasets(){const box=$('#selected-datasets');box.innerHTML='';selectedDatasets.forEach((path,i)=>{const chip=document.createElement('span');chip.className='dataset-chip';const label=document.createElement('span');label.textContent=path;const remove=document.createElement('button');remove.type='button';remove.dataset.index=i;remove.textContent='×';chip.append(label,remove);box.appendChild(chip);});$('#dataset-path').value=selectedDatasets.join(',');}
++$('#add-dataset').onclick=()=>{const path=$('#dataset-folder-select').value;if(!path||selectedDatasets.includes(path))return;selectedDatasets.push(path);renderDatasets();$('#dataset-folder-select').value='';preview();};
++$('#selected-datasets').onclick=e=>{const b=e.target.closest('button[data-index]');if(!b)return;selectedDatasets.splice(Number(b.dataset.index),1);renderDatasets();preview();};
++let noticeTimer;
++$('#generate-annotations').onclick=async()=>{
++ if(!selectedDatasets.length){$('#annotation-status').textContent='폴더를 추가하세요.';return;}
++ const button=$('#generate-annotations');if(button.disabled)return;
++ clearTimeout(noticeTimer);button.disabled=true;$('#annotation-status').textContent='이미지 목록 생성 및 학습 서버 전송 중…';
++ try{const result=await request('/annotations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({folders:[...selectedDatasets]})});
++ fields.train_path.value=result.train_path;fields.val_path.value=result.val_path;preview();
++ $('#annotation-status').textContent='✓ annotations 준비 완료 · 학습 '+result.train+'개 / 검증 '+result.val+'개';
++ noticeTimer=setTimeout(()=>{$('#annotation-status').textContent='';},5000);
++ }catch(e){$('#annotation-status').textContent='실패: '+e.message;}finally{button.disabled=false;}
++};
++$('#refresh-datasets').onclick=loadResources;$('#refresh-checkpoints').onclick=loadResources;
++
++function selectTab(t){tab=t;$('#yaml-tab').setAttribute('aria-selected',String(t==='yaml'));$('#request-tab').setAttribute('aria-selected',String(t==='request'));preview();}
++$('#yaml-tab').onclick=()=>selectTab('yaml');$('#request-tab').onclick=()=>selectTab('request');
++$('#download').onclick=()=>{if(!form.reportValidity())return;const url=URL.createObjectURL(new Blob([JSON.stringify(payload(),null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='training-'+model+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
++async function request(path,options={}){
++ const r=await fetch(API+path,{credentials:'same-origin',...options,signal:AbortSignal.timeout(180000)});
++ if(!r.headers.get('content-type')?.includes('application/json'))throw Error('학습 실행 API가 아직 연결되지 않았습니다.');
++ const data=await r.json();if(!r.ok)throw Error(data.error||data.detail||'서버 요청 실패');return data;
++}
++async function connect(){try{const c=await request('/capabilities');ready=c.launch===true;$('#connection').textContent=ready?'● 실행 API 연결됨':'설정 작성 가능 · 실행 API 연결 대기';}catch(e){ready=false;$('#connection').textContent='설정 작성·저장 가능 · 실행 API 미연결';}}
++form.onsubmit=async e=>{
++ e.preventDefault();if(busy||checking)return;
++ if(!ready){checking=true;await connect();checking=false;if(!ready){$('#job-state').textContent='연결 필요';$('#logs').textContent='실행 API가 연결되지 않아 학습을 시작하지 않았습니다. 설정 저장으로 요청 JSON을 내려받을 수 있습니다.';return;}}
++ busy=true;$('#launch').disabled=true;$('#job-state').textContent='요청 중';
++ try{
++  const job=await request('/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())});if(!job.id)throw Error('서버가 작업 ID를 반환하지 않았습니다.');
++  $('#job-id').textContent=String(job.id);$('#logs').textContent='학습 요청이 접수되었습니다.';
++  let done=false,polling=false;
++  const update=async()=>{if(polling||done)return;polling=true;try{const j=await request('/jobs/'+encodeURIComponent(job.id));$('#job-state').textContent=j.status||'확인 중';$('#logs').textContent=String(j.logs||'로그 대기 중');if(typeof j.progress==='number')$('#progress').value=Math.max(0,Math.min(100,j.progress));else $('#progress').removeAttribute('value');if(['completed','failed','stopped'].includes(j.status)){done=true;clearTimeout(jobTimer);busy=false;$('#launch').disabled=false;}}catch(err){$('#logs').textContent=err.message;}finally{polling=false;if(!done)jobTimer=setTimeout(update,5000);}};
++  clearTimeout(jobTimer);await update();
++ }catch(err){$('#job-state').textContent='요청 실패';$('#logs').textContent=err.message;busy=false;$('#launch').disabled=false;}
++};
++document.querySelector('.close').onclick=e=>{if(window.parent!==window){e.preventDefault();window.parent.postMessage({type:'ivx-close-train'},location.origin);}};
++document.addEventListener('keydown',e=>{if(e.key==='Escape'&&window.parent!==window){e.preventDefault();window.parent.postMessage({type:'ivx-close-train'},location.origin);}});
++window.addEventListener('pagehide',()=>clearTimeout(jobTimer));choose(model);connect();loadResources();
++})();

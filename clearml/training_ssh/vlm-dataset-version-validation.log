@@ -1,0 +1,3 @@
+PREPARED 20260914170226-0d489ac5 3336 371
+LINKED {"project": "Dataset", "dataset": "VLM", "version": "1", "id": "84f9731c21b844cba353ab8178639927", "parent_id": null, "parent_version": null}
+PASS: native VLM first version, immutable media/JSON files and manifest round-trip

@@ -9,6 +9,8 @@ if (process.platform === 'linux' && process.env.GTK_USE_PORTAL === undefined) {
 }
 
 const { app, BrowserWindow, ipcMain, dialog, protocol, shell } = require('electron');
+const { vlmJsonPathForMediaPath } = require('../shared/vlmJsonPaths');
+const { scanYoloDashboard } = require('../shared/yoloDashboardScan');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -29,6 +31,7 @@ if (process.platform === 'linux') {
 }
 
 const IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.webp', '.bmp'];
+const VIDEO_EXT = ['.mp4', '.webm', '.mov', '.mkv'];
 /** 재귀 스캔 시 제외할 폴더 (용량·노이즈 방지) */
 const SKIP_SCAN_DIRS = new Set(['.git', 'node_modules', '.venv', 'venv', '__pycache__', '.idea', '.vscode']);
 let mainWindow = null;
@@ -395,7 +398,13 @@ ipcMain.handle('setMediaBaseRoot', (_, root) => {
 
 ipcMain.handle('getMediaBaseRoot', () => mediaBaseRoot);
 
-function collectImagesRecursive(rootDir, currentDir, items) {
+function mediaKindForExt(ext, includeVideos) {
+  if (IMAGE_EXT.includes(ext)) return 'image';
+  if (includeVideos && VIDEO_EXT.includes(ext)) return 'video';
+  return null;
+}
+
+function collectMediaRecursive(rootDir, currentDir, items, includeVideos, vlmSidecarJson) {
   let entries;
   try {
     entries = fs.readdirSync(currentDir, { withFileTypes: true });
@@ -407,26 +416,32 @@ function collectImagesRecursive(rootDir, currentDir, items) {
     const full = path.join(currentDir, e.name);
     if (e.isDirectory()) {
       if (SKIP_SCAN_DIRS.has(e.name)) continue;
-      collectImagesRecursive(rootDir, full, items);
+      collectMediaRecursive(rootDir, full, items, includeVideos, vlmSidecarJson);
       continue;
     }
     if (!e.isFile()) continue;
     const ext = path.extname(e.name).toLowerCase();
-    if (!IMAGE_EXT.includes(ext)) continue;
+    const mediaType = mediaKindForExt(ext, includeVideos);
+    if (!mediaType) continue;
     const rel = path.relative(rootDir, full);
     const relPosix = rel.split(path.sep).join('/');
     const base = e.name.slice(0, -ext.length);
     const txtPath = path.join(path.dirname(full), base + '.txt');
-    const jsonPath = path.join(path.dirname(full), base + '.json');
+    const jsonPath = vlmSidecarJson ? vlmJsonPathForMediaPath(full) : path.join(path.dirname(full), base + '.json');
     const segments = relPosix.split('/').filter(Boolean);
     items.push({
       name: relPosix,
       imagePath: full,
       txtPath,
       jsonPath,
+      mediaType,
       imageUrl: 'yolo://workspace/' + segments.map(encodeURIComponent).join('/'),
     });
   }
+}
+
+function collectImagesRecursive(rootDir, currentDir, items) {
+  collectMediaRecursive(rootDir, currentDir, items, false, false);
 }
 
 ipcMain.handle('scanFolder', (_, dirPath) => {
@@ -434,6 +449,54 @@ ipcMain.handle('scanFolder', (_, dirPath) => {
   const root = path.resolve(dirPath);
   const items = [];
   collectImagesRecursive(root, root, items);
+  items.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  return items;
+});
+
+ipcMain.handle('scanYoloDashboard', (_, detectorRoot) => {
+  const root = path.resolve(String(detectorRoot || '/data/datasets/detector').trim());
+  if (!fs.existsSync(root)) {
+    return {
+      scannedAt: new Date().toISOString(),
+      detectorRoot: root,
+      folders: [],
+      recentChanges: [],
+      totals: {
+        totalImages: 0,
+        labeledImages: 0,
+        labelRate: 0,
+        byStatus: { draft: 0, submitted: 0, approved: 0, rejected: 0 },
+        pendingReview: 0,
+        rejected: 0,
+      },
+    };
+  }
+  try {
+    return scanYoloDashboard(root);
+  } catch (e) {
+    console.error(e);
+    return {
+      scannedAt: new Date().toISOString(),
+      detectorRoot: root,
+      folders: [],
+      recentChanges: [],
+      totals: {
+        totalImages: 0,
+        labeledImages: 0,
+        labelRate: 0,
+        byStatus: { draft: 0, submitted: 0, approved: 0, rejected: 0 },
+        pendingReview: 0,
+        rejected: 0,
+      },
+    };
+  }
+});
+
+ipcMain.handle('scanMediaFolder', (_, dirPath) => {
+  if (!dirPath || !fs.existsSync(dirPath)) return [];
+  const root = path.resolve(dirPath);
+  const items = [];
+  collectMediaRecursive(root, root, items, true, true);
   items.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
   return items;
 });
@@ -455,10 +518,11 @@ ipcMain.handle('writeTxt', async (_, filePath, content) => {
   return queueUtf8Write(filePath, content || '');
 });
 
-ipcMain.handle('openLabelFileDialog', async () => {
+ipcMain.handle('openLabelFileDialog', async (_, opts) => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     filters: [{ name: 'Label file', extensions: ['txt'] }],
     properties: ['openFile'],
+    defaultPath: opts?.initialPath,
   });
   if (canceled || !filePaths.length) return null;
   return filePaths[0];

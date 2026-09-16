@@ -1,0 +1,51 @@
+--- scripts/mlops_vlm_validate.py
++++ scripts/mlops_vlm_validate.py
+@@ -0,0 +1,48 @@
++#!/usr/bin/env python3
++"""Validate effective request options before creating a VLM container."""
++import sys
++from pathlib import Path
++from mlops_vlm_probe import ROOT, resources
++from vlm_options import SPECS, value_valid, LORA, VIDEO
++catalog=resources()
++effective=dict(catalog['defaults'])
++args=sys.argv[1:]
++if len(args)%2:raise SystemExit('Invalid environment arguments')
++explicit={}
++for i in range(0,len(args),2):
++    if args[i]!='-e':raise SystemExit('Invalid environment argument')
++    key,sep,value=args[i+1].partition('=')
++    if not sep:raise SystemExit('Missing environment value')
++    explicit[key]=value
++    effective[key]=value
++modality=effective.get('TRAIN_MODALITY') or 'both'
++mode=effective.get('TRAIN_MODE') or 'lora'
++for field,(_,key,kind) in SPECS.items():
++    if field=='model':key=modality.upper()+'_MODEL'
++    if field in LORA and mode=='full':
++        if key in explicit:raise SystemExit('LoRA settings require lora mode')
++        continue
++    if field in VIDEO and modality=='image':
++        if key in explicit:raise SystemExit('Video settings require video/both modality')
++        continue
++    value=effective.get(key,'')
++    if value=='':continue
++    if kind.startswith('int:') or kind=='integer':value=int(value)
++    elif kind in {'positive','dropout','ratio'}:value=float(value)
++    elif kind=='bool':
++        if value.lower() not in {'true','false','1','0','yes','no','on','off'}:raise SystemExit('Invalid boolean')
++        value=value.lower() in {'true','1','yes','on'}
++    value_valid(field,value)
++    if kind=='gpu':
++        selected=value.split(',')
++        if len(set(selected))!=len(selected) or not set(selected)<={g['id'] for g in catalog['gpus']}:raise SystemExit('GPU unavailable')
++    if kind in {'model','json'}:
++        path=Path(value)
++        if value.startswith('/workspace/'):path=ROOT/value.removeprefix('/workspace/')
++        elif not path.is_absolute():path=ROOT/'VLM'/path
++        path=path.resolve()
++        allowed=[ROOT/'VLM/weights'] if kind=='model' else [ROOT/'VLM/annotation/vlm',ROOT/'Dataset/vlm']
++        if not any(path.is_relative_to(base.resolve()) for base in allowed):raise SystemExit('Path outside mounted model/dataset directories')
++        if kind=='model' and not (path/'config.json').is_file():raise SystemExit('Local model directory missing config.json')
++        if kind=='json' and (not path.is_file() or path.suffix!='.json'):raise SystemExit('Dataset JSON missing')
++print('MLOps VLM effective settings validated',flush=True)

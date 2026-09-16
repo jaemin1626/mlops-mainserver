@@ -1,68 +1,78 @@
 import type { VlmOfflineTask } from './vlmTypes';
-import { resolveStoredReviewResult } from './vlmReviewOptions';
-
-/** 검수 결과 옵션 id (LOCAL_VLM_REVIEW_OPTIONS) */
-export type VlmReviewResult = string;
 
 export type VlmDraftPayload = {
-  reviewResult: VlmReviewResult;
   inputPrompt: string;
   gptResponse: string;
-  dueDate: string;
-  note: string;
 };
 
-function toStoredReviewResult(r: VlmReviewResult): string {
-  return resolveStoredReviewResult(r);
-}
+/** @deprecated labeling mode — review result no longer used */
+export type VlmReviewResult = string;
 
-/** conversations에서 첫 gpt/assistant 텍스트 (원본 슬롯) */
-function extractGptFromParsed(parsed: Record<string, unknown>): string {
-  const rawData = parsed.rawData as Record<string, unknown> | undefined;
-  const conv = rawData?.conversations;
-  if (!Array.isArray(conv)) return '';
-  for (const c of conv) {
-    if (!c || typeof c !== 'object') continue;
+function findConversationIndex(conversations: unknown[], roles: string[]): number {
+  if (!Array.isArray(conversations)) return -1;
+  return conversations.findIndex((c) => {
+    if (!c || typeof c !== 'object') return false;
     const from = String((c as Record<string, unknown>).from ?? '').toLowerCase();
-    if (from === 'gpt' || from === 'assistant' || from === 'model') {
-      return String((c as Record<string, unknown>).value ?? '');
-    }
-  }
-  return '';
+    return roles.includes(from);
+  });
 }
 
-/**
- * 원본은 originalAnswer(및 대화 gpt value), 수정은 editedAnswer, 기한은 rawResultData.dueDate.
- * 출력 JSON 축소: ui 블록 없음, answer 는 쓰지 않음(읽기 시 레거시 answer 만 인식).
- */
+/** conversations에 프롬프트·GPT 응답 반영 (ShareGPT 단일 항목) */
 export function mergeVlmPayloadIntoSourceData(task: Pick<VlmOfflineTask, 'sourceData'>, payload: VlmDraftPayload): string {
   let parsed: Record<string, unknown> = {};
   try {
-    if (typeof task.sourceData === 'string' && task.sourceData) parsed = JSON.parse(task.sourceData);
-    else if (task.sourceData && typeof task.sourceData === 'object') parsed = task.sourceData as Record<string, unknown>;
+    if (typeof task.sourceData === 'string' && task.sourceData) {
+      parsed = JSON.parse(task.sourceData) as Record<string, unknown>;
+    } else if (task.sourceData && typeof task.sourceData === 'object') {
+      parsed = task.sourceData as Record<string, unknown>;
+    }
   } catch {
-    /* keep {} */
+    parsed = {};
   }
-  const { ui: _omitUi, ...parsedRest } = parsed;
-  const rawResultData = { ...(parsed.rawResultData as Record<string, unknown> | undefined || {}) };
-  const { answer: _omitAnswer, ...rawRest } = rawResultData;
-  const stored = toStoredReviewResult(payload.reviewResult);
-  const fromConv = extractGptFromParsed(parsed).trim();
-  const existingOrig = String(rawRest.originalAnswer ?? '').trim();
-  const originalAnswer = existingOrig || fromConv;
 
-  const nextRrd: Record<string, unknown> = {
-    ...rawRest,
-    originalAnswer,
-    reviewResult: stored,
-    dueDate: payload.dueDate,
-  };
-  const gpt = String(payload.gptResponse ?? '').trim();
-  if (gpt.length > 0) nextRrd.editedAnswer = payload.gptResponse;
-  else delete nextRrd.editedAnswer;
+  const rawData = parsed.rawData;
+  if (rawData && typeof rawData === 'object' && !Array.isArray(rawData)) {
+    parsed = {
+      ...parsed,
+      conversations: (rawData as Record<string, unknown>).conversations ?? parsed.conversations,
+      image: parsed.image ?? extractVlmMediaPathFromRecord(parsed),
+    };
+  }
 
-  return JSON.stringify({
-    ...parsedRest,
-    rawResultData: nextRrd,
-  });
+  delete parsed.ui;
+  delete parsed.rawResultData;
+  delete parsed.rawData;
+  delete parsed.resolvedImagePath;
+  delete parsed.resolvedMediaPath;
+  delete parsed.original_response;
+  delete parsed.result;
+  delete parsed.dueDate;
+
+  let conversations: unknown[] = Array.isArray(parsed.conversations) ? [...parsed.conversations] : [];
+  const humanIdx = findConversationIndex(conversations, ['human', 'user']);
+  if (humanIdx >= 0) {
+    const prev = conversations[humanIdx] as Record<string, unknown>;
+    conversations[humanIdx] = { ...prev, from: prev.from ?? 'human', value: payload.inputPrompt };
+  } else {
+    conversations.unshift({ from: 'human', value: payload.inputPrompt });
+  }
+
+  const gptIdx = findConversationIndex(conversations, ['gpt', 'assistant', 'model']);
+  if (gptIdx >= 0) {
+    const prev = conversations[gptIdx] as Record<string, unknown>;
+    conversations[gptIdx] = { ...prev, from: prev.from ?? 'gpt', value: payload.gptResponse };
+  } else {
+    conversations.push({ from: 'gpt', value: payload.gptResponse });
+  }
+
+  parsed.conversations = conversations;
+  return JSON.stringify(parsed);
+}
+
+function extractVlmMediaPathFromRecord(record: Record<string, unknown>): string {
+  const media = String(record.media ?? '').trim();
+  if (media) return media;
+  const video = String(record.video ?? record.video_path ?? record.videoPath ?? '').trim();
+  if (video) return video;
+  return String(record.image ?? record.image_path ?? record.imagePath ?? '').trim();
 }

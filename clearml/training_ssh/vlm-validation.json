@@ -1,0 +1,105 @@
+{
+  "job_id": "8c846a1e7dc04c1392441ee5c5272106",
+  "task_id": "ad9f54f747ce4eb1bb030289f646cf32",
+  "status": "completed",
+  "params": {
+    "type": "vlm",
+    "modality": "image",
+    "mode": "lora",
+    "model": "/workspace/VLM/weights/Image",
+    "train_json": "/workspace/VLM/annotation/vlm/image/latest/train.json",
+    "val_json": "/workspace/VLM/annotation/vlm/image/latest/valid.json",
+    "epochs": 1,
+    "batch": 1,
+    "gradient_accumulation": 1,
+    "gpu": "0",
+    "workers": 0,
+    "max_samples": 4,
+    "max_length": 4096,
+    "lora_rank": 4,
+    "lora_alpha": 8,
+    "lora_dropout": 0.05,
+    "gradient_checkpointing": true,
+    "eval_steps": 0,
+    "logging_steps": 1,
+    "save_steps": 0,
+    "name": "mlops_vlm_image_smoke_20260914"
+  },
+  "applied_parameters": {
+    "General": {
+      "project": "VLM",
+      "task": "mlops_vlm_image_smoke_20260914",
+      "train_mode": "lora",
+      "train_modality": "image",
+      "clearml_config": "/workspace/mount/config/.runtime/clearml.conf"
+    },
+    "Model": {
+      "base_model": "/workspace/VLM/weights/Image",
+      "architecture": "Qwen3_5ForConditionalGeneration",
+      "model_type": "qwen3_5",
+      "weight_dir": "/workspace/VLM/weights/Image",
+      "local_files_only": "True",
+      "use_kernels": "False",
+      "lora_r": "4",
+      "lora_alpha": "8",
+      "lora_dropout": "0.05",
+      "lora_targets": "{'up_proj', 'q_proj', 'k_proj', 'in_proj_qkv', 'gate_proj', 'down_proj', 'v_proj', 'o_proj', 'out_proj'}"
+    },
+    "Dataset": {
+      "image_json_dir": "/workspace/Dataset/vlm/image_json",
+      "video_json_dir": "/workspace/Dataset/vlm/video_json",
+      "train_json_files": "/workspace/VLM/annotation/vlm/image/latest/train.json",
+      "val_json": "/workspace/VLM/annotation/vlm/image/latest/valid.json",
+      "max_samples": "4",
+      "train_samples": "3",
+      "valid_samples": "1"
+    },
+    "Training": {
+      "epochs": "1",
+      "batch_size": "1",
+      "grad_accum": "1",
+      "effective_batch_size": "1",
+      "learning_rate": "0.0002",
+      "logging_steps": "1",
+      "eval_strategy": "epoch",
+      "save_strategy": "epoch",
+      "save_total_limit": "1",
+      "load_best_model_at_end": "True",
+      "gradient_checkpointing": "True",
+      "max_seq_length": "4096",
+      "num_gpus": "1",
+      "world_size": "1",
+      "device_map": "{'': 0}",
+      "bf16": "True",
+      "metric_for_best_model": "eval_loss"
+    },
+    "Output": {
+      "output_dir": "/workspace/VLM/runs/train/image/202609140615",
+      "run_plots_dir": "/workspace/VLM/runs/train/image/202609140615_plots",
+      "split_manifest": "/workspace/VLM/annotation/vlm/image/manifest/202609140615",
+      "train_output_root": "/workspace/VLM/runs/train/image",
+      "clearml_best_artifact": "best",
+      "clearml_best_metric": "f1_macro"
+    }
+  },
+  "metrics": {
+    "train/epoch": 1.0,
+    "train/loss": 0.7757900257905325,
+    "train/grad_norm": 6.5551228523254395,
+    "train/learning_rate": 6.666666666666667e-05,
+    "train/samples_per_second": 0.027,
+    "train/total_flos": 8628622669440.0,
+    "train/steps_per_second": 0.027,
+    "train/runtime": 111.467,
+    "valid/samples_per_second": 0.116,
+    "valid/loss": 0.47894152998924255,
+    "valid/steps_per_second": 0.116,
+    "valid/runtime": 8.6047
+  },
+  "artifact": {
+    "key": "best",
+    "uri": "http://172.16.4.84:8081/VLM/mlops_vlm_image_smoke_20260914.ad9f54f747ce4eb1bb030289f646cf32/artifacts/best/best.zip",
+    "content_size": 17025479,
+    "hash": "d61b8eb8552e7449ebda5aa62c27e4f6eef885d5e63d1c655af1a12bbf0b6b0f"
+  }
+}

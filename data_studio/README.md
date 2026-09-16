@@ -34,22 +34,30 @@ Windows에서 `npm run electron:build` 시 심볼릭 링크 권한 오류가 나
 2. **라벨파일 열기 (Ctrl+L)**: 클래스 목록이 한 줄에 하나씩 적힌 `.txt` 파일 선택 (예: `person`, `car`, `bicycle`).
 3. 이미지마다 바운딩 박스를 그린 뒤 **저장 (Ctrl+S)** 또는 **다음/이전 (D/A)** 으로 이동 시 자동 저장.
 
-## VLM 검수 모드
+## VLM 작업 모드
 
-상단 탭에서 **VLM 검수**를 선택합니다.
+상단 탭에서 **VLM 작업**을 선택합니다.
 
-1. **JSON 열기 (Ctrl+L)**: 검수할 작업 JSON을 선택합니다. **JSON 파일이 들어 있는 폴더**가 워크스페이스 루트가 되며, JSON 안 이미지 경로는 **`Event/…`로 시작하는 상대 경로**를 사용합니다 (JSON과 `Event` 폴더를 같은 상위에 두는 구조). 별도의 이미지 폴더 선택은 없습니다.
-3. **임시 저장 / 작업 제출**: 웹 Data Studio와 동일한 규칙으로 `sourceData`에 `ui`·`rawResultData`를 병합해 **같은 JSON 파일**에 저장합니다.
+1. **폴더 열기 (Ctrl+O)**: `images/` 또는 `videos/` 하위 폴더를 엽니다. JSON은 미디어와 **같은 상대 경로**로 `images_json/` · `videos_json/`에 저장됩니다.
+   - `…/vlm/images/Cigarette/base/Negative/a.jpg` → `…/vlm/images_json/Cigarette/base/Negative/a.json`
+   - `…/vlm/videos/Fire/a.mp4` → `…/vlm/videos_json/Fire/a.json`
+   영상은 웹에서 H.264 변환 스트리밍(`/fs/video`)을 사용합니다.
+2. **저장 (Ctrl+S)**: 현재 이미지의 JSON을 ShareGPT 항목 형식으로 저장합니다.
+3. **이동 (A / D)**: 이전/다음 이미지로 이동합니다. 「이동 시 자동 저장」이 켜져 있으면 이동 전에 저장합니다.
 
-**JSON 형식** (자동 인식)
+**JSON 형식** (이미지당 1파일, `sample.json` 항목과 동일)
 
-- `{ "sourceData": "…문자열…", … }` — DB와 동일
-- `{ "sourceData": { "rawData": … }, … }` — `sourceData`가 **객체**인 export
-- `[ { …태스크… }, … ]` — 배열이면 **첫 항목**을 검수 (저장 시 배열 구조 유지)
-- `{ "tasks": [ … ], … }` 등 — `tasks` / `items` / `data` / `records` / `results` / `vlm_tasks` 안의 첫 항목
-- `[{ "index": "…", "image": "Event/…", "conversations": [ … ] }, …]` — **배열**(현재 `sample.json` 형식). **A / D** 또는 **← / →**로 항목 이동(이동 전 현재 항목 저장).
-- `{ "0": { "image": "Event/…", "conversations": [ … ] }, "1": { … } }` — 숫자 문자열 키 맵. **A / D**로 항목 이동(저장 동일).
+```json
+{
+  "index": "0000000",
+  "image": "Negative/example.jpg",
+  "conversations": [
+    { "from": "human", "value": "…" },
+    { "from": "gpt", "value": "…" }
+  ]
+}
+```
 
-이미지 경로는 `resolvedImagePath`, `rawData.image`, `imagePath` 등 여러 키를 순서대로 시도합니다.
+기존 일괄 JSON(배열·DB export 등)을 `.json`으로 열면 **첫 항목**을 읽어옵니다. 저장 시에는 위 단일 항목 형식으로 정리됩니다.
 
 필요한 파일들은 기존 프로젝트에서 복사해 두었으며, 이 폴더만으로 별도 구동 가능합니다.

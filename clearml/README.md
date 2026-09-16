@@ -28,10 +28,11 @@ bash start.sh
 **Step 2 (`start.sh`) 내부 순서:**
 
 ```
-① Dataset NFS 마운트     mount/scripts/mount_dataset.sh
-② .env 자동 보완         gen-secrets.sh → gen-auth.sh → apply-env.sh
+① Dataset NFS 마운트       mount/scripts/mount_dataset.sh
+② 생성형 결과 NFS 마운트   mount/scripts/mount_generated.sh
+③ .env 자동 보완           gen-secrets.sh → gen-auth.sh → apply-env.sh
 ③ ClearML 기동           compose.sh up -d
-④ Data Studio 재기동     마운트 경로 반영
+④ Data Studio · Seoul Studio 재기동
 ⑤ Grafana 모니터링     monitoring-compose.sh up -d --force-recreate
 ```
 
@@ -55,6 +56,7 @@ bash start.sh --no-monitoring
 |--------|-----|
 | ClearML UI | http://172.16.4.82:8080 (`.env`의 IP) |
 | Data Studio | http://172.16.4.82:8080/data-studio/ |
+| Seoul Studio | http://172.16.4.82:8080/seoul-studio/ |
 | 모델 평가 콘솔 | http://172.16.4.82:8090 |
 
 로그인: `.env` 의 `CLEARML_LOGIN_USER` / `CLEARML_LOGIN_PASSWORD`  
@@ -90,11 +92,13 @@ bash packaging/apply-env.sh --restart   # IP만 바꿀 때
 
 | 구분 | 키 | 필수 | 설명 |
 |------|-----|------|------|
-| 서버 주소 | `CLEARML_SERVER_IP` | ✅ | 82 IP (예: 172.16.4.82) |
+| MLOps 서버 IP | `CLEARML_SERVER_IP` | ✅ | ClearML·Seoul Studio·Grafana |
 | 포트 | `CLEARML_WEB_PORT`, `CLEARML_API_PORT`, `CLEARML_FILES_PORT` | ✅ | 기본 8080 / 8008 / 8081 |
 | 모니터링 IP | `MONITORING_SERVER_IP` | Grafana 사용 시 | 보통 `CLEARML_SERVER_IP` 와 동일 |
-| Dataset NFS | `TRAINING_SERVER_IP`, `TRAINING_SERVER_USER`, `TRAINING_DATASET_PATH` | Data Studio | 168 쪽 경로 |
-| Dataset 로컬 | `HOST_DATASET_PATH` | Data Studio | 82 마운트 지점 |
+| 학습·ComfyUI IP | `TRAINING_SERVER_IP` | ✅ | Dataset NFS · ComfyUI |
+| ComfyUI 포트 | `COMFYUI_PORT` | ✅ | 기본 8188 |
+| Dataset NFS | `TRAINING_DATASET_PATH`, `HOST_DATASET_PATH` | Data Studio | |
+| 생성형 영상 NFS | `TRAINING_GENERATED_PATH`, `MLOPS_GENERATED_MOUNT_PATH` | Seoul Studio | |
 | UI 로그인 | `CLEARML_LOGIN_USER`, `CLEARML_LOGIN_PASSWORD` | 선택 | 비우면 자동 생성 |
 | Grafana | `GRAFANA_ADMIN_PASSWORD` | Grafana 사용 시 | |
 | Grafana exporter | `CLEARML_ACCESS_KEY`, `CLEARML_SECRET_KEY` | Grafana 사용 시 | ClearML UI에서 발급 |
@@ -104,7 +108,7 @@ bash packaging/apply-env.sh --restart   # IP만 바꿀 때
 | 키 | 누가 채움 |
 |----|-----------|
 | `CLEARML_TOKEN_SECRET`, `CLEARML_SESSION_SECRET` | `gen-secrets.sh` |
-| `CLEARML_HOST_IP`, `CLEARML_WEB_HOST`, `CLEARML_API_HOST` 등 | `apply-env.sh` |
+| `CLEARML_HOST_IP`, `CLEARML_WEB_HOST`, `SEOUL_STUDIO_COMFY_URL` 등 | `apply-env.sh` |
 
 ### ❌ 직접 수정하지 않는 파일
 
@@ -146,14 +150,51 @@ bash packaging/apply-env.sh --restart   # IP만 바꿀 때
 
 ---
 
-## 4. Dataset NFS (168 → 82)
+## 4. Dataset · 생성형 결과 NFS (168 → 82)
 
-`.env` 의 NFS 설정을 따릅니다.
+| 용도 | `.env` 키 (168 경로) | `.env` 키 (82 마운트) |
+|------|---------------------|----------------------|
+| Dataset (Data Studio) | `TRAINING_DATASET_PATH` | `HOST_DATASET_PATH` |
+| 생성형 영상 (Seoul Studio) | `TRAINING_GENERATED_PATH` | `MLOPS_GENERATED_MOUNT_PATH` |
 
 ```bash
 bash mount/scripts/mount_dataset.sh mount
-bash mount/scripts/mount_dataset.sh status
-bash mount/scripts/mount_dataset.sh umount
+bash mount/scripts/mount_generated.sh mount
+bash mount/scripts/mount_generated.sh status
+```
+
+Seoul Studio 생성 영상은 `MLOPS_GENERATED_MOUNT_PATH` (`/home/intellivix/train/ComfyUI/generate_datasets`)에 저장됩니다.
+
+### ComfyUI 생성 서버 (Seoul Studio 의존)
+
+Seoul Studio는 **`TRAINING_SERVER_IP`:`COMFYUI_PORT`** ComfyUI에 HTTP로 작업을 보냅니다. 해당 서버에서 ComfyUI가 떠 있어야 생성이 됩니다.
+
+| 항목 | `.env` |
+|------|--------|
+| 서버 IP | `TRAINING_SERVER_IP` |
+| 포트 | `COMFYUI_PORT` (기본 8188) |
+| 접속 URL (자동) | `SEOUL_STUDIO_COMFY_URL` ← apply-env 가 계산 |
+| repo | `/home/intellivix/train` |
+| ComfyUI main | `/home/intellivix/train/ComfyUI/runtime/ComfyUI/main.py` |
+| venv | `/home/intellivix/train/ComfyUI/runtime/venv/bin/python` |
+| 생성 출력 | `/home/intellivix/train/ComfyUI/generate_datasets/` |
+| 포트 | `8188` (`0.0.0.0` listen, Dockerfile CMD) |
+
+**81 서버에서 기동 (Docker Compose):**
+
+```bash
+cd /home/intellivix/train
+./scripts/config.sh apply
+./scripts/comfy.sh build    # 최초 1회
+./scripts/comfy.sh up       # 백그라운드 실행
+./scripts/comfy.sh status
+```
+
+**82에서 연결 확인:**
+
+```bash
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' ${SEOUL_STUDIO_COMFY_URL}/
+# 200 또는 404 → OK / 000 또는 connection refused → 81에서 comfy.sh up 필요
 ```
 
 ---
@@ -191,7 +232,14 @@ docker run --rm -v /opt/clearml/monitoring/data/prometheus:/d alpine chown -R 65
 **Dataset 마운트 실패**
 
 - `.env` 의 `TRAINING_SERVER_IP`, `TRAINING_DATASET_PATH` 확인
-- 168 NFS export 및 방화벽 확인
+- 81 NFS export 및 방화벽 확인
+
+**Seoul Studio — "생성 서버에 연결할 수 없습니다"**
+
+- 82 설정 문제가 아니라 **81 ComfyUI 미기동**인 경우가 대부분
+- 81: `./scripts/comfy.sh status` → `up` 필요
+- MLOps 서버: `curl ${SEOUL_STUDIO_COMFY_URL}/` 로 확인 (`connection refused` = ComfyUI 꺼짐)
+- `.env` 의 `TRAINING_SERVER_IP` / `COMFYUI_PORT` 변경 후 `bash start.sh` 실행
 
 ---
 
@@ -203,3 +251,11 @@ bash packaging/pack.sh
 ```
 
 상세: [`packaging/README.md`](packaging/README.md)
+
+## SSH 원격 학습·테스트 (172.16.4.83)
+
+`.env`의 `TRAINING_SSH_*`로 전용 SSH 클라이언트를 설정합니다.
+`bash compose.sh --profile training-ssh build training-ssh`로 빌드한 뒤
+`bash training-ssh.sh --password doctor`로 비밀번호를 입력하여 연결을 확인합니다.
+학습은 `doctor` 대신 `detector` 또는 `vlm`을 지정합니다.
+키 인증, 상태·로그 조회, 테스트 경로 설정은 [SSH 실행 가이드](training_ssh/README.md)를 참고하세요.

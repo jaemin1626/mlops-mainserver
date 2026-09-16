@@ -7,6 +7,8 @@ type PickerMode = 'dir' | 'label' | 'json' | 'save-name';
 interface PickerRequest {
   mode: PickerMode;
   initialPath?: string;
+  /** 지정 시 이 경로 아래로만 탐색 (상위 이동 불가) */
+  pickerRoot?: string;
   directory?: string;
   defaultName?: string;
   done: (path: string | null) => void;
@@ -37,9 +39,24 @@ async function apiJson<T>(url: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-async function resolveStartPath(preferred: string | undefined, roots: string[]): Promise<string> {
-  const candidates = [preferred, ...roots].filter((path): path is string => Boolean(path));
+function isPathUnderRoot(path: string, root: string): boolean {
+  const normalizedRoot = root.replace(/[\\/]+$/, '');
+  return (
+    path === normalizedRoot ||
+    path.startsWith(`${normalizedRoot}/`) ||
+    path.startsWith(`${normalizedRoot}\\`)
+  );
+}
+
+async function resolveStartPath(
+  preferred: string | undefined,
+  roots: string[],
+  pickerRoot?: string
+): Promise<string> {
+  const scopedRoots = pickerRoot ? [pickerRoot] : roots;
+  const candidates = [preferred, ...scopedRoots].filter((path): path is string => Boolean(path));
   for (const candidate of candidates) {
+    if (pickerRoot && !isPathUnderRoot(candidate, pickerRoot)) continue;
     try {
       await apiJson(`${API}/fs/list?path=${encodeURIComponent(candidate)}`);
       return candidate;
@@ -47,7 +64,7 @@ async function resolveStartPath(preferred: string | undefined, roots: string[]):
       // Try the next allowed path.
     }
   }
-  return roots[0] || '/data/datasets';
+  return pickerRoot || scopedRoots[0] || '/data/datasets';
 }
 
 function parentPath(path: string): string {
@@ -123,6 +140,7 @@ function pickerCopy(mode: PickerMode): { title: string; description: string; emp
 const ServerFolderPicker: React.FC = () => {
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [roots, setRoots] = useState<string[]>([]);
+  const [pickerRoot, setPickerRoot] = useState('');
   const [activeRoot, setActiveRoot] = useState('');
   const [currentPath, setCurrentPath] = useState('');
   const [entries, setEntries] = useState<ServerEntry[]>([]);
@@ -133,11 +151,21 @@ const ServerFolderPicker: React.FC = () => {
   const requestRef = useRef<PickerRequest | null>(null);
   const loadSequenceRef = useRef(0);
 
+  const pickerRootRef = useRef('');
+  pickerRootRef.current = pickerRoot;
+
   const loadDirectory = useCallback(async (path: string) => {
     const sequence = ++loadSequenceRef.current;
     setLoading(true);
     setError('');
     setSelected(null);
+    const scopedRoot = pickerRootRef.current;
+    if (scopedRoot && !isPathUnderRoot(path, scopedRoot)) {
+      if (sequence !== loadSequenceRef.current) return;
+      setError('허용된 작업 루트 밖의 경로입니다.');
+      setLoading(false);
+      return;
+    }
     try {
       const data = await apiJson<{ entries: ServerEntry[] }>(
         `${API}/fs/list?path=${encodeURIComponent(path)}`
@@ -183,6 +211,7 @@ const ServerFolderPicker: React.FC = () => {
       setPicker({ mode: request.mode });
       setFileName(request.defaultName || '');
       setRoots([]);
+      setPickerRoot('');
       setActiveRoot('');
       setCurrentPath('');
       setEntries([]);
@@ -194,11 +223,13 @@ const ServerFolderPicker: React.FC = () => {
         .then(async ({ roots: allowedRoots }) => {
           if (requestRef.current !== request) return;
           setRoots(allowedRoots);
+          const scopedRoot = request.pickerRoot?.trim() || '';
+          setPickerRoot(scopedRoot);
           const preferred =
             request.mode === 'save-name' ? request.directory || request.initialPath : request.initialPath;
-          const startPath = await resolveStartPath(preferred, allowedRoots);
+          const startPath = await resolveStartPath(preferred, allowedRoots, scopedRoot || undefined);
           if (requestRef.current !== request) return;
-          setActiveRoot(rootForPath(startPath, allowedRoots));
+          setActiveRoot(scopedRoot || rootForPath(startPath, allowedRoots));
           await loadDirectory(startPath);
         })
         .catch((rootError: Error) => {
@@ -330,13 +361,18 @@ const ServerFolderPicker: React.FC = () => {
             <button
               type="button"
               disabled={!currentPath || atRoot || loading}
-              onClick={() => void loadDirectory(parentPath(currentPath))}
+              onClick={() => {
+                const parent = parentPath(currentPath);
+                const next =
+                  pickerRoot && !isPathUnderRoot(parent, pickerRoot) ? pickerRoot : parent;
+                void loadDirectory(next);
+              }}
               className="rounded-xl border border-white/10 px-3 py-2 text-sm font-medium text-[var(--accent-blue)] transition-all hover:border-[var(--accent-blue)] disabled:cursor-not-allowed disabled:opacity-35"
             >
               상위 폴더
             </button>
           )}
-          {picker.mode !== 'save-name' && roots.length > 1 && (
+          {picker.mode !== 'save-name' && !pickerRoot && roots.length > 1 && (
             <select
               value={activeRoot}
               onChange={(event) => {

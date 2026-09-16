@@ -45,12 +45,13 @@ run_root() {
     fi
 }
 
-# ── 1/5 Dataset 마운트 (Data Studio) ─────────────────────────────────────
-step "1/5 Dataset mount (실패해도 다음 단계 진행)"
+# ── 1/5 NFS 마운트 (Dataset + 생성형 결과) ───────────────────────────────
+step "1/5 NFS mount (실패해도 다음 단계 진행)"
 if [ "$SKIP_MOUNT" = 1 ]; then
     echo "  skipped (--no-mount)"
 else
     bash "${ROOT}/mount/scripts/mount_dataset.sh" mount || true
+    bash "${ROOT}/mount/scripts/mount_generated.sh" mount || true
 fi
 
 # ── 2/5 .env (서명 키 · 주소 · 파생 URL) ─────────────────────────────────
@@ -76,10 +77,10 @@ cd "${ROOT}"
 ./compose.sh up -d
 ok "compose up 완료"
 
-# ── 4/5 Data Studio 마운트 경로 반영 ─────────────────────────────────────
-step "4/5 Data Studio 재기동 (Dataset bind mount 반영)"
-./compose.sh up -d --force-recreate data-studio
-ok "data-studio ready"
+# ── 4/5 Data Studio · Seoul Studio 재기동 (마운트/설정 반영) ─────────────
+step "4/5 Data Studio · Seoul Studio 재기동"
+./compose.sh up -d --force-recreate data-studio seoul-studio
+ok "data-studio · seoul-studio ready"
 
 # ── 5/5 Grafana 모니터링 (.env 변경 반영) ─────────────────────────────────
 step "5/5 Grafana 모니터링"
@@ -94,13 +95,18 @@ fi
 # ── 결과 요약 ────────────────────────────────────────────────────────────
 HOST_IP="$(grep '^CLEARML_HOST_IP=' "${ROOT}/.env" 2>/dev/null | cut -d= -f2- || echo '?')"
 DATASET_PATH="$(grep '^DATASET_EXPORT_PATH=' "${ROOT}/.env" 2>/dev/null | cut -d= -f2- || echo '?')"
+GENERATED_PATH="$(grep '^GENERATED_EXPORT_PATH=' "${ROOT}/.env" 2>/dev/null | cut -d= -f2- || echo '?')"
 GRAFANA_PORT="$(grep '^GRAFANA_PORT=' "${ROOT}/.env" 2>/dev/null | cut -d= -f2- || echo '3000')"
 
 echo ""
 echo "=================================================="
 echo "  ClearML UI  : http://${HOST_IP}:8080"
 echo "  Data Studio : http://${HOST_IP}:8080/data-studio/"
+echo "  Seoul Studio: http://${HOST_IP}:8080/seoul-studio/"
 echo "  Grafana     : http://${HOST_IP}:${GRAFANA_PORT}/d/clearml-mlops-main"
 echo "  Dataset path: ${DATASET_PATH}"
+echo "  Generated path: ${GENERATED_PATH}"
 echo "=================================================="
 bash "${ROOT}/mount/scripts/mount_dataset.sh" status 2>/dev/null || true
+echo ""
+bash "${ROOT}/mount/scripts/mount_generated.sh" status 2>/dev/null || true

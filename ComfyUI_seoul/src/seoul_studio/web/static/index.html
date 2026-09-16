@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Intellivix Video Studio</title>
+  <base href="__SEOUL_STUDIO_BASE__/">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header glass">
+      <div class="brand">
+        <img class="brand-mark" src="static/intellivix-logo.svg" alt="">
+        <span class="brand-title">Intellivix Video Studio</span>
+      </div>
+      <div class="mode-tabs" role="tablist" aria-label="화면">
+        <button type="button" id="tab-create" class="mode-tab is-active" role="tab" aria-selected="true" data-view="create">이미지 → 영상</button>
+        <button type="button" id="tab-library" class="mode-tab" role="tab" aria-selected="false" data-view="library">저장 폴더</button>
+      </div>
+      <div class="header-spacer"></div>
+      <p id="status" class="status-pill" aria-live="polite">준비됨</p>
+      <div class="header-action">
+        <button type="button" id="toggle-settings" class="btn btn-ghost">연결 설정</button>
+      </div>
+    </header>
+
+    <main id="view-create" class="app-main app-view">
+      <section class="panel glass-card">
+        <div class="panel-head">
+          <h2>입력</h2>
+          <p class="hint">프롬프트는 영어로 쓰는 것이 더 안정적입니다. 한 번에 하나만 생성됩니다.</p>
+        </div>
+
+        <div class="field" id="field-image">
+          <label class="field-label" for="i2v-image">시작 이미지</label>
+          <label class="file-drop" for="i2v-image" id="file-drop">
+            <span class="file-drop-title">PNG, JPEG, WebP</span>
+            <span class="file-drop-sub">클릭하거나 파일을 선택하세요</span>
+            <input id="i2v-image" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          </label>
+          <p id="error-image" class="field-error-msg" hidden></p>
+          <img id="image-preview" class="image-preview" alt="선택한 이미지 미리보기" hidden>
+        </div>
+
+        <div class="field" id="field-prompt">
+          <label class="field-label" for="i2v-prompt">입력 프롬프트</label>
+          <textarea id="i2v-prompt" rows="4" placeholder="example: the person starts walking forward slowly"></textarea>
+          <p id="error-prompt" class="field-error-msg" hidden></p>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="negative-prompt">네거티브 프롬프트 <span class="optional">(선택)</span></label>
+          <textarea id="negative-prompt" rows="2" placeholder="example: blurry, watermark, extra limbs"></textarea>
+        </div>
+
+        <div class="settings-grid">
+          <div class="field">
+            <label class="field-label" for="resolution">해상도</label>
+            <select id="resolution"></select>
+          </div>
+          <div class="field" id="aspect-ratio-field" hidden>
+            <label class="field-label" for="aspect-ratio">종횡비</label>
+            <select id="aspect-ratio"></select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="duration">길이</label>
+            <select id="duration"></select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="repeat">반복</label>
+            <select id="repeat">
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="panel-actions">
+          <button type="button" id="toggle-advanced" class="btn btn-ghost btn-block">고급 설정</button>
+          <p id="save-location-hint" class="save-location-hint">저장 위치: generate_datasets</p>
+          <button type="button" id="generate" class="btn btn-primary btn-block">영상 생성</button>
+        </div>
+      </section>
+
+      <section class="panel glass-card">
+        <div class="panel-head">
+          <h2>결과</h2>
+          <p class="hint">생성된 영상이 여기에 표시됩니다.</p>
+        </div>
+        <div id="job-progress-wrap" class="job-progress-wrap" hidden>
+          <p id="job-progress-status" class="job-progress-status">준비 중…</p>
+          <p id="job-progress-step" class="job-progress-step"></p>
+          <div class="job-progress-track" aria-hidden="true">
+            <div id="job-progress-bar" class="job-progress-bar is-indeterminate"></div>
+          </div>
+          <p id="job-progress-detail" class="job-progress-detail"></p>
+        </div>
+        <ul id="results" class="results-list">
+          <li id="results-empty" class="results-empty">아직 생성된 영상이 없습니다.</li>
+        </ul>
+      </section>
+    </main>
+
+    <section id="view-library" class="library-view app-view" hidden>
+      <div class="panel glass-card library-panel">
+        <div class="panel-head library-head">
+          <div>
+            <h2>저장 폴더</h2>
+            <p class="hint">저장된 영상을 폴더별로 확인합니다. 저장 위치 변경은 <strong>연결 설정</strong>에서 하세요.</p>
+          </div>
+          <div class="library-head-actions">
+            <button type="button" id="clear-library-folder" class="btn btn-ghost btn-danger-text">현재 폴더 비우기</button>
+            <button type="button" id="refresh-library" class="btn btn-secondary">새로고침</button>
+          </div>
+        </div>
+        <div class="library-paths">
+          <div class="library-path-row">
+            <span class="library-path-label">현재</span>
+            <code id="library-current-path">generate_datasets</code>
+          </div>
+          <div class="library-path-row">
+            <span class="library-path-label">호스트</span>
+            <code id="library-host-output-dir">—</code>
+          </div>
+        </div>
+        <nav id="library-breadcrumb" class="folder-breadcrumb" aria-label="폴더 경로"></nav>
+        <p class="library-view-note">영상은 현재 폴더에 직접 있는 파일만 표시됩니다. 하위 폴더 안 영상은 해당 폴더로 들어가세요.</p>
+        <div id="library-bulk-bar" class="library-bulk-bar" hidden>
+          <label class="library-select-all">
+            <input id="library-select-all" type="checkbox">
+            <span>전체 선택</span>
+          </label>
+          <span id="library-selected-count" class="library-selected-count">0개 선택</span>
+          <div class="library-bulk-actions">
+            <button type="button" id="library-bulk-send" class="btn btn-secondary btn-sm" disabled>작업으로 보내기</button>
+            <button type="button" id="library-bulk-download" class="btn btn-secondary btn-sm" disabled>선택 다운로드</button>
+            <button type="button" id="library-bulk-delete" class="btn btn-ghost btn-sm btn-danger-text" disabled>선택 삭제</button>
+          </div>
+        </div>
+        <ul id="library-subfolders" class="library-subfolders"></ul>
+        <ul id="library-list" class="library-list">
+          <li id="library-empty" class="library-empty">저장 폴더에 영상이 없습니다.</li>
+        </ul>
+      </div>
+    </section>
+
+    <aside id="advanced-drawer" class="popover" hidden>
+      <div class="popover-head">
+        <h2>고급 설정</h2>
+        <button type="button" id="close-advanced" class="btn btn-ghost btn-icon" aria-label="닫기">×</button>
+      </div>
+      <p class="hint popover-intro">시드 값을 고정하면 비슷한 결과를 재현할 수 있습니다.</p>
+      <label class="check-row">
+        <input id="random-seed" type="checkbox" checked>
+        <span>랜덤 시드</span>
+      </label>
+      <div class="field">
+        <label class="field-label" for="seed">시드</label>
+        <input id="seed" type="number" min="0" disabled>
+      </div>
+    </aside>
+
+    <aside id="settings-drawer" class="popover" hidden>
+      <div class="popover-head">
+        <h2>연결 설정</h2>
+        <button type="button" id="close-settings" class="btn btn-ghost btn-icon" aria-label="닫기">×</button>
+      </div>
+      <div class="field">
+        <label class="field-label" for="server-url">생성 서버</label>
+        <input id="server-url" type="text" placeholder="http://TRAINING_SERVER_IP:8188">
+        <p class="hint">루트 주소만 입력하세요. <code>/prompt</code> 는 붙이지 않습니다.</p>
+      </div>
+      <div class="field">
+        <label class="field-label">저장 루트</label>
+        <input id="output-dir" type="text" readonly>
+        <p class="hint">루트는 <code>generate_datasets</code> 로 고정됩니다.</p>
+      </div>
+      <div class="field settings-folder-field">
+        <label class="field-label">현재 저장 폴더</label>
+        <p id="settings-selected-folder" class="settings-selected-folder">generate_datasets</p>
+        <nav id="settings-folder-breadcrumb" class="folder-breadcrumb" aria-label="저장 폴더 경로"></nav>
+        <ul id="settings-folder-list" class="settings-folder-list"></ul>
+        <div class="settings-folder-create">
+          <input id="settings-new-folder-name" type="text" placeholder="새 폴더 이름">
+          <button type="button" id="settings-create-folder" class="btn btn-secondary">만들기</button>
+        </div>
+        <button type="button" id="settings-select-folder" class="btn btn-primary btn-block">이 폴더를 저장 위치로 사용</button>
+      </div>
+      <button type="button" id="save-settings" class="btn btn-secondary">설정 저장</button>
+    </aside>
+    <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
+
+    <div id="send-to-task-backdrop" class="drawer-backdrop" hidden></div>
+    <div id="send-to-task-modal" class="send-to-task-modal" hidden role="dialog" aria-modal="true" aria-labelledby="send-to-task-title">
+      <div class="send-to-task-panel glass-card">
+        <h2 id="send-to-task-title">작업으로 보내기</h2>
+        <p id="send-to-task-summary" class="hint send-to-task-summary">선택한 영상을 YOLO 또는 VLM 작업 폴더로 보냅니다.</p>
+
+        <fieldset class="send-to-task-fieldset">
+          <legend class="field-label">대상</legend>
+          <label class="radio-row">
+            <input type="radio" name="send-target" value="yolo" checked>
+            <span>YOLO (detector)</span>
+          </label>
+          <label class="radio-row">
+            <input type="radio" name="send-target" value="vlm">
+            <span>VLM</span>
+          </label>
+        </fieldset>
+
+        <fieldset id="send-media-kind-fieldset" class="send-to-task-fieldset" hidden>
+          <legend class="field-label">형식</legend>
+          <label class="radio-row">
+            <input type="radio" name="send-media-kind" value="image" checked>
+            <span>이미지 (프레임 추출)</span>
+          </label>
+          <label class="radio-row">
+            <input type="radio" name="send-media-kind" value="video">
+            <span>영상</span>
+          </label>
+        </fieldset>
+
+        <div id="send-frame-section" class="send-frame-section">
+          <h3 class="send-frame-title">Frame 추출</h3>
+          <p class="hint">영상마다 동일한 이름의 폴더를 만들고, 그 안에 N 프레임마다 1장씩 추출합니다.</p>
+          <details class="send-help-details">
+            <summary>사용 방법 · Frame 추출</summary>
+            <p>추출 간격(N)을 입력하면 0, N, 2N… 프레임에서 JPG를 저장합니다. 예: 30이면 약 1초에 1장(30fps 기준).</p>
+          </details>
+          <details class="send-help-details">
+            <summary>처음 사용할 때 체크리스트</summary>
+            <ul>
+              <li>YOLO는 이미지만 보낼 수 있습니다.</li>
+              <li>VLM은 이미지 또는 영상을 선택할 수 있습니다.</li>
+              <li>이미지는 <code>generated/영상이름/</code> 폴더에 저장됩니다.</li>
+            </ul>
+          </details>
+          <div class="field">
+            <label class="field-label" for="send-frame-interval">추출 간격 (N 프레임)</label>
+            <input id="send-frame-interval" type="number" min="1" max="10000" value="30">
+          </div>
+        </div>
+
+        <p id="send-dest-hint" class="hint send-dest-hint">저장 위치: detector/generated</p>
+
+        <div class="send-to-task-actions">
+          <button type="button" id="send-to-task-cancel" class="btn btn-ghost">취소</button>
+          <button type="button" id="send-to-task-confirm" class="btn btn-primary">보내기</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="training-block-backdrop" class="drawer-backdrop" hidden></div>
+    <div id="training-block-modal" class="alert-modal" hidden role="alertdialog" aria-modal="true" aria-labelledby="training-block-title">
+      <div class="alert-modal-panel glass-card">
+        <h2 id="training-block-title">생성 불가</h2>
+        <p id="training-block-message">GPU가 학습에 활용 중이므로, 학습이 완료된 후에 생성을 해주시길 바랍니다.</p>
+        <button type="button" id="training-block-ok" class="btn btn-primary btn-block">확인</button>
+      </div>
+    </div>
+  </div>
+  <script src="static/app.js"></script>
+</body>
+</html>

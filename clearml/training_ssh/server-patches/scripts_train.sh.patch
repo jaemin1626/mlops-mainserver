@@ -1,0 +1,33 @@
+--- scripts/train.sh
++++ scripts/train.sh
+@@ -17,6 +17,20 @@
+     --learning-rate) envs+=( -e LEARNING_RATE="$2" ); shift 2;; --gradient-accumulation) envs+=( -e GRAD_ACCUM="$2" ); shift 2;;
+     --max-length) envs+=( -e MAX_SEQ_LENGTH="$2" ); shift 2;; --data) envs+=( -e DATA="$2" ); shift 2;;
+     --val-json) envs+=( -e VAL_JSON="$2" ); shift 2;; --mode) envs+=( -e TRAIN_MODE="$2" ); shift 2;;
++    --lora-rank) envs+=( -e LORA_R="$2" ); shift 2;;
++    --lora-alpha) envs+=( -e LORA_ALPHA="$2" ); shift 2;;
++    --lora-dropout) envs+=( -e LORA_DROPOUT="$2" ); shift 2;;
++    --lora-target-modules) envs+=( -e LORA_TARGET_MODULES="$2" ); shift 2;;
++    --gradient-checkpointing) envs+=( -e GRADIENT_CHECKPOINTING="$2" ); shift 2;;
++    --video-fps) envs+=( -e VIDEO_FPS="$2" ); shift 2;;
++    --video-max-pixels) envs+=( -e VIDEO_MAX_PIXELS="$2" ); shift 2;;
++    --validation-ratio) envs+=( -e VALID_RATIO="$2" ); shift 2;;
++    --validation-seed) envs+=( -e VALID_SPLIT_SEED="$2" ); shift 2;;
++    --max-samples) envs+=( -e MAX_SAMPLES="$2" ); shift 2;;
++    --eval-steps) envs+=( -e EVAL_STEPS="$2" ); shift 2;;
++    --logging-steps) envs+=( -e LOGGING_STEPS="$2" ); shift 2;;
++    --save-steps) envs+=( -e SAVE_STEPS="$2" ); shift 2;;
++    --save-total-limit) envs+=( -e SAVE_TOTAL_LIMIT="$2" ); shift 2;;
+     -h|--help) echo "train.sh --type detector|vlm [options]"; exit 0;; *) die "unknown option $1";;
+   esac
+ done
+@@ -38,6 +52,9 @@
+   [[ -n "$annotation" ]] && envs+=( -e TRAIN_JSON="$annotation" )
+   envs+=( -e TRAIN_MODALITY="$modality" ); service=vlm; cmd=/workspace/VLM/scripts/train/run_train.sh
+ fi
++if [[ "$type" == vlm ]]; then
++  python3 "$ROOT/scripts/mlops_vlm_validate.py" "${envs[@]}"
++fi
+ override_keys=""
+ for ((i=1; i<${#envs[@]}; i+=2)); do
+   override_keys+="${envs[i]%%=*},"

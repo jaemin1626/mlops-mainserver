@@ -35,6 +35,29 @@ is_mounted() {
     mountpoint -q "$LOCAL_MOUNT_PATH" 2>/dev/null
 }
 
+current_mount_source() {
+    findmnt -n -o SOURCE --target "$LOCAL_MOUNT_PATH" 2>/dev/null || true
+}
+
+is_expected_mount() {
+    is_mounted && [ "$(current_mount_source)" = "$NFS_SOURCE" ]
+}
+
+umount_existing() {
+    if ! is_mounted; then
+        return 0
+    fi
+    local old
+    old="$(current_mount_source)"
+    warn "기존 마운트 해제: ${old:-${LOCAL_MOUNT_PATH}}"
+    if [ "$(id -u)" -eq 0 ]; then
+        umount "$LOCAL_MOUNT_PATH" 2>/dev/null || umount -l "$LOCAL_MOUNT_PATH"
+    else
+        run_root umount "$LOCAL_MOUNT_PATH" 2>/dev/null || run_root umount -l "$LOCAL_MOUNT_PATH"
+    fi
+    ok "unmounted ${LOCAL_MOUNT_PATH}"
+}
+
 sync_compose_env() {
     local set_env="${ROOT}/packaging/lib/set_env.py"
     mkdir -p "${LOCAL_MOUNT_PATH}"
@@ -79,11 +102,13 @@ cmd_mount() {
 
     run_root mkdir -p "$LOCAL_MOUNT_PATH" 2>/dev/null || mkdir -p "$LOCAL_MOUNT_PATH" 2>/dev/null || true
 
-    if is_mounted; then
-        ok "already mounted"
+    if is_expected_mount; then
+        ok "already mounted (${NFS_SOURCE})"
         sync_compose_env
         return 0
     fi
+
+    umount_existing || true
 
     ensure_nfs_client || true
 
@@ -118,7 +143,7 @@ cmd_status() {
     load_config || exit 1
 
     echo "Dataset mount status"
-    echo "  Config:      ${MOUNT_ENV}"
+    echo "  Config:      ${ENV_FILE}"
     echo "  Source:      ${NFS_SOURCE}"
     echo "  Mount point: ${LOCAL_MOUNT_PATH}"
     echo "  Compose env: DATASET_EXPORT_PATH → .env"
@@ -143,12 +168,7 @@ cmd_status() {
 cmd_umount() {
     load_config || exit 1
     if is_mounted; then
-        if [ "$(id -u)" -eq 0 ]; then
-            umount "$LOCAL_MOUNT_PATH"
-        else
-        run_root umount "$LOCAL_MOUNT_PATH"
-        fi
-        ok "unmounted ${LOCAL_MOUNT_PATH}"
+        umount_existing
     else
         warn "not mounted: ${LOCAL_MOUNT_PATH}"
     fi

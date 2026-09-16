@@ -1,0 +1,23 @@
+{
+  "i2v": {
+    "prompt_node": "121",
+    "prompt_input": "text",
+    "negative_node": "110",
+    "negative_input": "text",
+    "seed_node": "114",
+    "seed_node_2": "115",
+    "seed_input": "noise_seed",
+    "width_node": "292",
+    "width_input": "value",
+    "height_node": "293",
+    "height_input": "value",
+    "length_node": "291",
+    "length_input": "value",
+    "fps_node": "285",
+    "fps_input": "value",
+    "t2v_mode_node": "290",
+    "t2v_mode_input": "value",
+    "image_node": "167",
+    "image_input": "image"
+  }
+}

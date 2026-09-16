@@ -1,0 +1,5 @@
+windows-client/
+.git/
+__pycache__/
+*.pyc
+.pytest_cache/

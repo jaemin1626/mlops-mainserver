@@ -1,7 +1,14 @@
 const express = require('express');
 const fs = require('node:fs');
 const path = require('node:path');
-const { parseAllowedRoots, resolveSafePath, assertWritableLabelPath } = require('./pathGuard');
+const {
+  parseAllowedRoots,
+  resolveSafePath,
+  resolveSafePathForWrite,
+  assertWritableLabelPath,
+} = require('./pathGuard');
+const { vlmJsonPathForMediaPath } = require('./vlmJsonPaths');
+const { scanYoloDashboard } = require('../shared/yoloDashboardScan');
 
 const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp']);
 const VIDEO_EXT = new Set(['.mp4', '.webm', '.mov', '.mkv']);
@@ -52,38 +59,60 @@ function createFsRouter() {
     res.json({ entries: out });
   });
 
+  function walkMediaFiles(dir, relBase, items, includeVideos, vlmSidecarJson) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (SKIP.has(e.name) || e.name.startsWith('.')) continue;
+      const full = path.join(dir, e.name);
+      const rel = relBase ? `${relBase}/${e.name}` : e.name;
+      if (e.isDirectory()) {
+        walkMediaFiles(full, rel, items, includeVideos, vlmSidecarJson);
+        continue;
+      }
+      const ext = path.extname(e.name).toLowerCase();
+      let mediaType = null;
+      if (IMAGE_EXT.has(ext)) mediaType = 'image';
+      else if (includeVideos && VIDEO_EXT.has(ext)) mediaType = 'video';
+      if (!mediaType) continue;
+
+      const base = full.slice(0, -ext.length);
+      const txtPath = base + '.txt';
+      const jsonPath = vlmSidecarJson ? vlmJsonPathForMediaPath(full) : `${base}.json`;
+      const q = encodeURIComponent(full);
+      const imageUrl =
+        mediaType === 'video'
+          ? `/data-studio/api/fs/video?path=${q}`
+          : `/data-studio/api/fs/file?path=${q}`;
+      items.push({
+        name: rel.replace(/\\/g, '/'),
+        imagePath: full,
+        txtPath,
+        jsonPath,
+        mediaType,
+        imageUrl,
+      });
+    }
+  }
+
   router.get('/fs/images', (req, res) => {
     const safe = resolveSafePath(roots(), String(req.query.path || ''));
     if (!safe.ok) return res.status(safe.status).json({ error: safe.error });
     const items = [];
-    function walk(dir, relBase) {
-      let entries;
-      try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const e of entries) {
-        if (SKIP.has(e.name) || e.name.startsWith('.')) continue;
-        const full = path.join(dir, e.name);
-        const rel = relBase ? `${relBase}/${e.name}` : e.name;
-        if (e.isDirectory()) walk(full, rel);
-        else if (IMAGE_EXT.has(path.extname(e.name).toLowerCase())) {
-          const base = full.slice(0, -path.extname(full).length);
-          const txtPath = base + '.txt';
-          const jsonPath = base + '.json';
-          const q = encodeURIComponent(full);
-          items.push({
-            name: rel.replace(/\\/g, '/'),
-            imagePath: full,
-            txtPath,
-            jsonPath,
-            imageUrl: `/data-studio/api/fs/file?path=${q}`,
-          });
-        }
-      }
-    }
-    walk(safe.path, '');
+    walkMediaFiles(safe.path, '', items, false, false);
+    items.sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ items });
+  });
+
+  router.get('/fs/media', (req, res) => {
+    const safe = resolveSafePath(roots(), String(req.query.path || ''));
+    if (!safe.ok) return res.status(safe.status).json({ error: safe.error });
+    const items = [];
+    walkMediaFiles(safe.path, '', items, true, true);
     items.sort((a, b) => a.name.localeCompare(b.name));
     res.json({ items });
   });
@@ -128,6 +157,27 @@ function createFsRouter() {
     res.sendFile(playable.path, { acceptRanges: true });
   });
 
+  router.get('/dashboard/yolo-summary', (req, res) => {
+    const rootParam = String(req.query.root || '/data/datasets/detector').trim();
+    const safe = resolveSafePath(roots(), rootParam);
+    if (!safe.ok) return res.status(safe.status).json({ error: safe.error });
+    let stat;
+    try {
+      stat = fs.statSync(safe.path);
+    } catch {
+      return res.status(404).json({ error: 'not found' });
+    }
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ error: 'root must be a directory' });
+    }
+    try {
+      const summary = scanYoloDashboard(safe.path);
+      res.json(summary);
+    } catch (err) {
+      res.status(500).json({ error: (err && err.message) || 'scan failed' });
+    }
+  });
+
   router.put('/fs/file', express.json({ limit: '5mb' }), (req, res) => {
     if (typeof req.body?.path !== 'string' || req.body.path.trim().length === 0) {
       return res.status(400).json({ error: 'path required' });
@@ -135,7 +185,7 @@ function createFsRouter() {
     if (typeof req.body?.content !== 'string') {
       return res.status(400).json({ error: 'content must be a string' });
     }
-    const safe = resolveSafePath(roots(), req.body.path);
+    const safe = resolveSafePathForWrite(roots(), req.body.path);
     if (!safe.ok) return res.status(safe.status).json({ error: safe.error });
     const writable = assertWritableLabelPath(safe.path);
     if (!writable.ok) return res.status(writable.status).json({ error: writable.error });

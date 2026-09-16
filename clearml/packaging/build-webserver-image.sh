@@ -61,11 +61,17 @@ lines = [
     "COPY nginx/default.d/index-no-store.conf /etc/nginx/default.d/index-no-store.conf",
     "COPY nginx/default.d/cache-bust.conf /etc/nginx/default.d/cache-bust.conf",
     "COPY nginx/default.d/data-studio.conf /etc/nginx/default.d/data-studio.conf",
+    "COPY nginx/default.d/seoul-studio.conf /etc/nginx/default.d/seoul-studio.conf",
     "",
 ]
 for f in static:
     for d in static_dest[f]:
         lines.append(f"COPY branding/{f} {d}")
+
+# Intellivix runtime extensions are not part of the upstream rehash map.
+for name in ["admin.html", "admin-embedded.html", "env.js", "ivx-sidebar.js", "ivx-sidebar.css", "ivx-dashboard.js", "ivx-dataset-branch.js", "ivx-dataset-branch.css"]:
+    if os.path.isfile(os.path.join(branding_dir, name)):
+        lines.append(f"COPY branding/{name} /usr/share/nginx/html/{name}")
 
 for new, orig in sorted(pairs, key=lambda x: x[1]):
     src = os.path.join(branding_dir, new)

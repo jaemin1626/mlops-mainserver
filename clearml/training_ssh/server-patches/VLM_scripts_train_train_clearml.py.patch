@@ -1,0 +1,19 @@
+--- VLM/scripts/train/train_clearml.py
++++ VLM/scripts/train/train_clearml.py
+@@ -1496,6 +1496,16 @@
+ 
+         cls_metrics, debug_candidates, label_pairs = self.binary_eval_accumulator.finalize()
+         self.last_binary_eval = (cls_metrics, debug_candidates, label_pairs)
++
++        # General VLM datasets may not contain NE/ANI labels, so no binary F1
++        # is produced. Keep HF best-checkpoint selection valid for those runs.
++        if not cls_metrics and self.args.metric_for_best_model == "eval_f1_macro":
++            self.args.metric_for_best_model = "eval_loss"
++            self.args.greater_is_better = False
++            self.state.best_metric = None
++            log_main("Binary F1 unavailable for this validation data; selecting HF checkpoint by eval_loss.")
++            if is_main_process() and _active_clearml_task is not None:
++                _active_clearml_task.set_parameter("Training/metric_for_best_model", "eval_loss")
+ 
+         if is_main_process() and cls_metrics:
+             log_main(

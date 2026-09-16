@@ -1,0 +1,6 @@
+JOB bbd46f6e89c44f26bf2f0a3be2476166
+BEFORE {"status": "running", "clearml_task_id": "75e7c99472454fbf8af42832154bf2e8", "clearml_path": "/projects/6f5a3e17612f4825acb578c9522362cc/tasks/75e7c99472454fbf8af42832154bf2e8/output/log"}
+STOP {"id": "bbd46f6e89c44f26bf2f0a3be2476166", "status": "stopped", "clearml_task_id": "75e7c99472454fbf8af42832154bf2e8", "clearml_status": "stopped", "clearml_path": "/projects/6f5a3e17612f4825acb578c9522362cc/tasks/75e7c99472454fbf8af42832154bf2e8/output/log"}
+REMOTE {"jobs": [], "remote_running": false, "remote_types": []}
+CLEARML {"id": "75e7c99472454fbf8af42832154bf2e8", "status": "stopped"}
+PASS: live VLM stop synchronizes remote container, MLOps job and ClearML task
