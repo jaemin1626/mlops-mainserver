@@ -17,7 +17,7 @@ export interface ReadJsonFileResult {
   error?: string;
 }
 
-import type { YoloDashboardSummary } from './dashboardTypes';
+import type { VlmDashboardSummary, YoloDashboardSummary } from './dashboardTypes';
 
 export interface OcrDetectBox {
   text: string;
@@ -78,6 +78,7 @@ declare global {
       getMediaBaseRoot: () => Promise<string | null>;
       scanFolder: (path: string) => Promise<OfflineImageItem[]>;
       scanYoloDashboard: (detectorRoot?: string) => Promise<YoloDashboardSummary>;
+      scanVlmDashboard: (vlmRoot?: string) => Promise<VlmDashboardSummary>;
       /** VLM: 이미지 + 영상 재귀 스캔 */
       scanMediaFolder: (path: string) => Promise<OfflineImageItem[]>;
       readTxt: (path: string) => Promise<string>;

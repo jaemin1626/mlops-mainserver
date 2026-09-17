@@ -46,3 +46,30 @@ export interface YoloLaunchRequest {
 
 /** VLM 작업 화면 딥링크 — YOLO와 동일 형식 */
 export type VlmLaunchRequest = YoloLaunchRequest;
+
+export interface VlmMediaBreakdown {
+  imageCount: number;
+  videoCount: number;
+  labeledImageCount: number;
+  labeledVideoCount: number;
+  imageLabelRate: number;
+  videoLabelRate: number;
+}
+
+export interface VlmFolderStats extends YoloFolderStats, VlmMediaBreakdown {}
+
+export interface VlmDashboardTotals extends VlmMediaBreakdown {
+  totalImages: number;
+  labeledImages: number;
+  labelRate: number;
+  byStatus: Record<YoloWorkflowStatus, number>;
+  pendingReview: number;
+  rejected: number;
+}
+
+export interface VlmDashboardSummary {
+  scannedAt: string;
+  vlmRoot: string;
+  folders: VlmFolderStats[];
+  totals: VlmDashboardTotals;
+}

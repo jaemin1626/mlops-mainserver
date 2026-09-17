@@ -1,0 +1,119 @@
+TRAINING SERVER · 172.16.4.85
+LIVE · 5초마다 갱신
+마지막 수집: 9/17/2026, 11:52:23 AM
+▶
+PROJECTS DASHBOARD
+Team's Work
+RECENT PROJECTS
+VIEW ALL
+NEW PROJECT
+VLM
+1
+TOTAL
+0
+RUNNING
+1
+COMPLETED
+(24 hrs)
+COMPUTE TIME: 00:03:37
+Detector
+0
+TOTAL
+0
+RUNNING
+0
+COMPLETED
+(24 hrs)
+COMPUTE TIME: 00:00:00
+Dataset
+0
+TOTAL
+0
+RUNNING
+0
+COMPLETED
+(24 hrs)
+COMPUTE TIME: 00:00:00
+TRAINING SERVER METRICS
+GPU usage
+GPU 0
+0%
+858 / 97887 MB · 29°C
+GPU 1
+0%
+574 / 97887 MB · 29°C
+Total: 2 GPUs
+CPU usage
+0%
+Total: 64 Cores
+Memory usage
+9%
+Total: 251 GB RAM
+RECENT TASKS
+TYPE
+	
+TITLE
+	
+PROJECT
+	
+STARTED
+	
+UPDATED
+	
+STATUS
+
+
+Training
+	
+Image_20260917113036
+	
+VLM
+	Sep 17 2026 11:30	Sep 17 2026 11:34	
+Completed
+	
+
+
+Data Processing
+	
+VLM
+	
+Dataset/.datasets/VLM
+	Sep 17 2026 11:30	Sep 17 2026 11:30	
+Completed
+	
+
+
+Data Processing
+	
+VLM
+	
+Dataset/.datasets/VLM
+	Sep 17 2026 11:28	Sep 17 2026 11:28	
+Completed
+	
+
+
+Data Processing
+	
+VLM
+	
+Dataset/.datasets/VLM
+	Sep 17 2026 11:18	Sep 17 2026 11:18	
+Completed
+	
+
+
+Data Processing
+	
+VLM
+	
+Dataset/.datasets/VLM
+	Sep 17 2026 10:42	Sep 17 2026 10:42	
+Completed
+	
+CREATING A NEW TASK
+Clone any task to create a draft copy using right-click or the task context menu.
+
+Reproduce the original run by executing the new copy, or modify it’s configuration to try out a new approach.
+Don't show again
+2 / 15

@@ -62,7 +62,10 @@ class BundleTests(unittest.TestCase):
     def test_unicode_and_yaml_metacharacters(self):
         names=['사람: #1', 'car "two"']
         result=self.build(classes=names)
-        self.assertEqual(json.loads(result['yaml'].split('names: ',1)[1]),names)
+        # names are emitted as one "  <index>: <json string>" line each, not a single-line JSON array.
+        block=result['yaml'].split('names:\n',1)[1].split('\n\n',1)[0]
+        parsed=[json.loads(line.split(': ',1)[1]) for line in block.splitlines()]
+        self.assertEqual(parsed,names)
 
     def test_yolo_images_labels_layout_and_missing_labels(self):
         images=self.root/'third/images'; images.mkdir(parents=True)

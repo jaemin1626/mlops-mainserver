@@ -6,6 +6,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Shared with every other module that builds a remote path (detector.py, vlm.py,
+# deploy.py, dataset_api.py, training_cleanup.py, annotation_api.py) so a single
+# TRAINING_SSH_ROOT change in .env actually reaches every remote command instead
+# of only the generic doctor/status/logs/stop/test CLI below.
+TRAINING_ROOT = os.environ.get('TRAINING_SSH_ROOT', '/home/intellivix/train')
+
 
 def command(args, env=os.environ):
     if not args:
@@ -21,7 +27,7 @@ def command(args, env=os.environ):
     if action == 'detector':
         from detector import remote_command
         return ssh_command(remote_command({'type': 'detector'}), env)
-    root = env.get('TRAINING_SSH_ROOT', '/home/intellivix/train')
+    root = env.get('TRAINING_SSH_ROOT', TRAINING_ROOT)
     script = env.get('TRAINING_SSH_SCRIPT', './scripts/remote_train.sh')
     remote_args = args
     if action == 'test':

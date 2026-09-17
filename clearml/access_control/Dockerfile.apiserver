@@ -1,0 +1,3 @@
+FROM clearml/server:2.3.0-705
+COPY clearml_patch/fixed_user.py /opt/clearml/apiserver/service_repo/auth/fixed_user.py
+COPY clearml_patch/auth.py /opt/clearml/apiserver/service_repo/auth/auth.py

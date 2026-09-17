@@ -1,0 +1,79 @@
+--- /home/intellivix/train/VLM/scripts/train/train_clearml.py.bak-20260916121310	2026-09-16 21:13:11.022449502 +0900
++++ /home/intellivix/train/VLM/scripts/train/train_clearml.py	2026-09-17 09:04:07.923512454 +0900
+@@ -1156,7 +1156,10 @@
+ def annotate_debug_image(image_path: Path, gt: str, pred: str):
+     from PIL import Image, ImageDraw, ImageFont
+ 
+-    image = Image.open(image_path).convert("RGB")
++    try:
++        image = Image.open(image_path).convert("RGB")
++    except Exception:
++        image = Image.new("RGB", (960, 540), color=(22, 28, 38))
+     draw = ImageDraw.Draw(image)
+     banner_h = min(120, image.height // 4)
+     draw.rectangle([0, 0, image.width, banner_h], fill="black")
+@@ -1173,7 +1176,7 @@
+ 
+ def build_run_plots_dir(output_dir: str) -> Path:
+     output_path = Path(output_dir)
+-    plots_path = output_path.parent / f"{output_path.name}_plots"
++    plots_path = output_path
+     plots_path.mkdir(parents=True, exist_ok=True)
+     return plots_path
+ 
+@@ -1382,7 +1385,6 @@
+ 
+             if (
+                 is_main_process()
+-                and example_is_image(example)
+                 and len(self.debug_candidates) < self.debug_sample_count
+             ):
+                 media_path = resolve_media_path(example_media_path(example), json_dir)
+@@ -1750,7 +1752,7 @@
+     def _plot_path(self, stem: str, iteration: int) -> Path | None:
+         if self.run_plots_dir is None:
+             return None
+-        return self.run_plots_dir / f"{stem}_iter{iteration}.png"
++        return self.run_plots_dir / f"{stem}.png"
+ 
+     def _publish_plots(
+         self,
+@@ -1770,6 +1772,13 @@
+                 local_path=self._plot_path("confusion_matrix", iteration),
+             )
+ 
++        if self.run_plots_dir is not None and debug_candidates:
++            samples_dir = self.run_plots_dir / "prediction_samples"
++            samples_dir.mkdir(parents=True, exist_ok=True)
++            for index, (media_path, gt_label, pred_label) in enumerate(debug_candidates, start=1):
++                sample = annotate_debug_image(media_path, gt_label, pred_label)
++                sample.save(samples_dir / f"sample_{index:03d}.png")
++
+         debug_fig = plot_debug_samples_figure(debug_candidates)
+         if debug_fig is not None:
+             upload_matplotlib_plot(
+@@ -2369,6 +2378,24 @@
+             Path(output_dir),
+             trainer.state.global_step,
+         )
++        deployment_metadata = {
++            "model_name": os.getenv("CLEARML_TASK_NAME") or Path(output_dir).name,
++            "modality": train_modality,
++            "base_model": model_source,
++            "epoch": training_args.num_train_epochs,
++            "created_at": datetime.now().astimezone().isoformat(),
++            "status": "completed",
++        }
++        (Path(output_dir) / "deployment_metadata.json").write_text(
++            json.dumps(deployment_metadata, ensure_ascii=False, indent=2) + "\n",
++            encoding="utf-8",
++        )
++        # Training runs as root in Docker; downloads run as the host SSH account.
++        export_uid = int(os.getenv("VLM_EXPORT_UID", "1000"))
++        export_gid = int(os.getenv("VLM_EXPORT_GID", "1000"))
++        for artifact in Path(output_dir).rglob("*"):
++            if artifact.is_file():
++                os.chown(artifact, export_uid, export_gid)
+         _finalize_clearml_task(success=True)
+         log_main(f"Training complete. Saved to: {output_dir}")
+     distributed_barrier()

@@ -1,14 +1,50 @@
 const MODE = "i2v";
-let activeView = "create";
+let activeView = "library";
 let libraryLoaded = false;
 let libraryRootLabel = "generate_datasets";
 let bootstrapData = null;
+const ANONYMIZE_BLUR_RATIO = 10;
+const ANONYMIZE_CONF = 0.25;
+const ANONYMIZE_CLASS_OPTIONS = {
+  face: 2,
+  plate: 5,
+};
+
+let blurConfig = {
+  weights_path: "",
+  weights_available: false,
+  weights_ready: false,
+  weights_load_error: "",
+  default_blur_ratio: ANONYMIZE_BLUR_RATIO,
+  default_conf: ANONYMIZE_CONF,
+};
+
+function blurWeightsReady() {
+  return Boolean(blurConfig.weights_ready || (blurConfig.weights_available && !blurConfig.weights_load_error));
+}
+
+let canMutateOutputs = false;
+let exportJobRunning = false;
+
+function mutationDeniedMessage() {
+  return "로그인 또는 데이터 생성 권한이 필요합니다. MLOps에 로그인한 뒤 다시 시도하세요.";
+}
+
+function canRunExport() {
+  return canMutateOutputs && !exportJobRunning;
+}
 let outputSubdir = "";
 let settingsBrowsePath = "";
 let libraryBrowsePath = "";
+let libraryMediaFilter = "all";
+let exportJobAnonymizing = false;
 let libraryCurrentItems = [];
 let librarySelectedPaths = new Set();
 let sendToTaskPaths = [];
+const libraryTreeExpanded = new Set([""]);
+const libraryTreeLoaded = new Map();
+let libraryTreeRenderToken = 0;
+let libraryTreeSyncedPath = null;
 
 function formatFileSize(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -47,7 +83,7 @@ function outputVideoUrl(name) {
   return apiUrl(`/api/outputs/${segments}`);
 }
 
-function switchView(view) {
+function switchView(view, { reloadLibrary = false } = {}) {
   activeView = view;
   const createView = document.getElementById("view-create");
   const libraryView = document.getElementById("view-library");
@@ -62,9 +98,95 @@ function switchView(view) {
     tab.setAttribute("aria-selected", isActive ? "true" : "false");
   });
 
-  if (view === "library") {
+  if (view === "library" && (reloadLibrary || !libraryLoaded)) {
     loadLibrary().catch((err) => setStatus(err.message, "error"));
   }
+}
+
+function closeAllLibraryItemMenus() {
+  document.querySelectorAll(".library-item-menu-panel").forEach((panel) => {
+    panel.hidden = true;
+  });
+  document.querySelectorAll(".library-item-menu-trigger").forEach((button) => {
+    button.setAttribute("aria-expanded", "false");
+  });
+}
+
+function createLibraryItemMenu(item) {
+  const menu = document.createElement("div");
+  menu.className = "library-item-menu";
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "btn btn-secondary btn-sm library-item-menu-trigger";
+  trigger.textContent = "작업 ▾";
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-haspopup", "true");
+
+  const panel = document.createElement("div");
+  panel.className = "library-item-menu-panel";
+  panel.hidden = true;
+  panel.setAttribute("role", "menu");
+
+  const sendBtn = document.createElement("button");
+  sendBtn.type = "button";
+  sendBtn.className = "library-item-menu-item";
+  sendBtn.textContent = "작업으로 보내기(+비식별화)";
+  sendBtn.disabled = !canRunExport();
+  sendBtn.title = canMutateOutputs ? "" : mutationDeniedMessage();
+  sendBtn.addEventListener("click", () => {
+    closeAllLibraryItemMenus();
+    openSendToTaskModal([item.name]);
+  });
+
+  const download = document.createElement("a");
+  download.className = "library-item-menu-item";
+  download.href = outputVideoUrl(item.name);
+  download.download = item.name.split("/").pop() || item.name;
+  download.textContent = "다운로드";
+  download.addEventListener("click", () => {
+    closeAllLibraryItemMenus();
+  });
+
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "library-item-menu-item is-danger";
+  del.textContent = "삭제";
+  del.addEventListener("click", () => {
+    closeAllLibraryItemMenus();
+    deleteLibraryItem(item).catch((err) => setStatus(err.message, "error"));
+  });
+
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const wasOpen = !panel.hidden;
+    closeAllLibraryItemMenus();
+    if (!wasOpen) {
+      panel.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+    }
+  });
+
+  panel.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+
+  panel.appendChild(sendBtn);
+  panel.appendChild(download);
+  panel.appendChild(del);
+  menu.appendChild(trigger);
+  menu.appendChild(panel);
+  return menu;
+}
+
+function createMediaKindBadge(mediaKind) {
+  if (mediaKind !== "original" && mediaKind !== "anonymized") {
+    return null;
+  }
+  const badge = document.createElement("span");
+  badge.className = `library-media-badge is-${mediaKind}`;
+  badge.textContent = mediaKind === "anonymized" ? "비식별화" : "원본";
+  return badge;
 }
 
 function renderLibraryItem(item) {
@@ -113,38 +235,23 @@ function renderLibraryItem(item) {
   detail.className = "library-item-detail";
   detail.textContent = `${formatFileSize(item.size)} · ${formatModifiedAt(item.modified_at)}`;
 
+  const footer = document.createElement("div");
+  footer.className = "library-item-footer";
+
   const actions = document.createElement("div");
   actions.className = "library-item-actions";
 
-  const send = document.createElement("button");
-  send.type = "button";
-  send.className = "btn btn-ghost btn-sm";
-  send.textContent = "작업으로 보내기";
-  send.addEventListener("click", () => {
-    openSendToTaskModal([item.name]);
-  });
-
-  const download = document.createElement("a");
-  download.className = "btn btn-ghost btn-sm";
-  download.href = outputVideoUrl(item.name);
-  download.download = item.name.split("/").pop() || item.name;
-  download.textContent = "다운로드";
-
-  const del = document.createElement("button");
-  del.type = "button";
-  del.className = "btn btn-ghost btn-sm btn-danger-text";
-  del.textContent = "삭제";
-  del.addEventListener("click", () => {
-    deleteLibraryItem(item).catch((err) => setStatus(err.message, "error"));
-  });
+  const badge = createMediaKindBadge(item.media_kind);
+  if (badge) {
+    actions.appendChild(badge);
+  }
+  actions.appendChild(createLibraryItemMenu(item));
 
   meta.appendChild(title);
   meta.appendChild(detail);
-  actions.appendChild(send);
-  actions.appendChild(download);
-  actions.appendChild(del);
-  li.appendChild(meta);
-  li.appendChild(actions);
+  footer.appendChild(meta);
+  footer.appendChild(actions);
+  li.appendChild(footer);
   return li;
 }
 
@@ -160,7 +267,8 @@ function updateLibraryBulkBar() {
 
   bar.hidden = total === 0;
   countEl.textContent = `${count}개 선택`;
-  sendBtn.disabled = count === 0;
+  sendBtn.disabled = count === 0 || !canRunExport();
+  sendBtn.title = canMutateOutputs ? "" : mutationDeniedMessage();
   downloadBtn.disabled = count === 0;
   deleteBtn.disabled = count === 0;
 
@@ -233,8 +341,144 @@ function updateSaveLocationHint(path) {
   }
 }
 
-async function browseFolder(path) {
-  return api(`/api/outputs/browse?path=${encodeURIComponent(path || "")}`);
+function getLibraryMediaFilter() {
+  const selected = document.querySelector('input[name="library-media-filter"]:checked');
+  return selected ? selected.value : libraryMediaFilter;
+}
+
+async function browseFolder(path, mediaFilter) {
+  const filter = mediaFilter || getLibraryMediaFilter();
+  return api(
+    `/api/outputs/browse?path=${encodeURIComponent(path || "")}&media_filter=${encodeURIComponent(filter)}`,
+  );
+}
+
+async function fetchTreeChildren(path) {
+  return api(`/api/outputs/tree?path=${encodeURIComponent(path || "")}`);
+}
+
+async function ensureTreeChildren(path) {
+  if (libraryTreeLoaded.has(path)) {
+    return libraryTreeLoaded.get(path);
+  }
+  const data = await fetchTreeChildren(path);
+  const children = data.children || [];
+  libraryTreeLoaded.set(path, children);
+  return children;
+}
+
+function expandTreeToPath(path) {
+  libraryTreeExpanded.add("");
+  if (!path) {
+    return;
+  }
+  const parts = path.split("/").filter(Boolean);
+  let prefix = "";
+  parts.forEach((part) => {
+    prefix = prefix ? `${prefix}/${part}` : part;
+    libraryTreeExpanded.add(prefix);
+  });
+}
+
+async function renderTreeNode(path, container, token) {
+  if (token !== libraryTreeRenderToken) {
+    return;
+  }
+
+  const nodeWrap = document.createElement("div");
+  nodeWrap.className = "library-tree-node";
+  nodeWrap.dataset.path = path;
+
+  const expanded = libraryTreeExpanded.has(path);
+  const children = expanded ? await ensureTreeChildren(path) : [];
+  if (token !== libraryTreeRenderToken) {
+    return;
+  }
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "library-tree-toggle";
+  toggle.textContent = expanded ? "▼" : "▶";
+  toggle.classList.toggle("is-hidden", path !== "" && !children.length);
+
+  const label = document.createElement("button");
+  label.type = "button";
+  label.className = "library-tree-label";
+  label.textContent = path ? path.split("/").pop() : libraryRootLabel;
+  if (libraryBrowsePath === path) {
+    label.classList.add("is-current");
+  }
+  if (path.endsWith("/Anony") || path.split("/").pop() === "Anony") {
+    label.classList.add("is-anony");
+  }
+  label.addEventListener("click", () => {
+    navigateLibrary(path).catch((err) => setStatus(err.message, "error"));
+  });
+
+  toggle.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    if (expanded) {
+      libraryTreeExpanded.delete(path);
+    } else {
+      libraryTreeExpanded.add(path);
+      await ensureTreeChildren(path);
+    }
+    await renderLibraryTree();
+  });
+
+  nodeWrap.appendChild(toggle);
+  nodeWrap.appendChild(label);
+  container.appendChild(nodeWrap);
+
+  if (expanded && children.length) {
+    const childContainer = document.createElement("div");
+    childContainer.className = "library-tree-children";
+    container.appendChild(childContainer);
+    for (const child of children) {
+      await renderTreeNode(child.path, childContainer, token);
+      if (token !== libraryTreeRenderToken) {
+        return;
+      }
+    }
+  }
+}
+
+function highlightTreeCurrentPath() {
+  document.querySelectorAll(".library-tree-label").forEach((label) => {
+    const node = label.closest(".library-tree-node");
+    const path = node ? node.dataset.path || "" : "";
+    label.classList.toggle("is-current", path === libraryBrowsePath);
+  });
+}
+
+async function renderLibraryTree() {
+  const container = document.getElementById("library-tree");
+  if (!container) {
+    return;
+  }
+  const token = ++libraryTreeRenderToken;
+  container.replaceChildren();
+  await renderTreeNode("", container, token);
+  if (token !== libraryTreeRenderToken) {
+    return;
+  }
+}
+
+async function refreshLibraryBrowse() {
+  const data = await browseFolder(libraryBrowsePath);
+  libraryMediaFilter = data.media_filter || libraryMediaFilter;
+  const filterInput = document.querySelector(`input[name="library-media-filter"][value="${libraryMediaFilter}"]`);
+  if (filterInput) {
+    filterInput.checked = true;
+  }
+  renderLibrarySubfolders(data.subfolders || []);
+  renderLibraryList(data.items || [], libraryBrowsePath);
+  highlightTreeCurrentPath();
+}
+
+function invalidateLibraryTreeCache() {
+  libraryTreeLoaded.clear();
+  libraryTreeSyncedPath = null;
 }
 
 function renderFolderBreadcrumb(containerId, path, onNavigate) {
@@ -396,6 +640,7 @@ function renderLibrarySubfolders(subfolders) {
 async function navigateLibrary(path) {
   libraryBrowsePath = path || "";
   librarySelectedPaths.clear();
+  expandTreeToPath(libraryBrowsePath);
   const data = await browseFolder(libraryBrowsePath);
   renderLibraryView(data);
 }
@@ -403,6 +648,11 @@ async function navigateLibrary(path) {
 function renderLibraryView(data) {
   libraryRootLabel = data.root_label || "generate_datasets";
   libraryBrowsePath = data.path || "";
+  libraryMediaFilter = data.media_filter || libraryMediaFilter;
+  const filterInput = document.querySelector(`input[name="library-media-filter"][value="${libraryMediaFilter}"]`);
+  if (filterInput) {
+    filterInput.checked = true;
+  }
   document.getElementById("library-current-path").textContent = formatLibraryPath(libraryBrowsePath);
   document.getElementById("library-host-output-dir").textContent = data.host_path || "—";
   renderFolderBreadcrumb("library-breadcrumb", libraryBrowsePath, async (path) => {
@@ -410,6 +660,15 @@ function renderLibraryView(data) {
   });
   renderLibrarySubfolders(data.subfolders || []);
   renderLibraryList(data.items || [], libraryBrowsePath);
+
+  const shouldRefreshTree = libraryTreeSyncedPath !== libraryBrowsePath;
+  if (shouldRefreshTree) {
+    libraryTreeSyncedPath = libraryBrowsePath;
+    expandTreeToPath(libraryBrowsePath);
+    renderLibraryTree().catch(() => {});
+  } else {
+    highlightTreeCurrentPath();
+  }
 }
 
 async function deleteLibraryItem(item) {
@@ -425,12 +684,14 @@ async function deleteLibraryItem(item) {
 
 async function clearCurrentLibraryFolder() {
   const folderLabel = formatLibraryPath(libraryBrowsePath);
+  const mediaFilter = getLibraryMediaFilter();
   if (!window.confirm(`"${folderLabel}" 폴더의 영상을 모두 삭제할까요?\n하위 폴더는 삭제되지 않습니다.`)) {
     return;
   }
-  const data = await api(`/api/outputs/delete-folder?path=${encodeURIComponent(libraryBrowsePath || "")}`, {
-    method: "POST",
-  });
+  const data = await api(
+    `/api/outputs/delete-folder?path=${encodeURIComponent(libraryBrowsePath || "")}&media_filter=${encodeURIComponent(mediaFilter)}`,
+    { method: "POST" },
+  );
   librarySelectedPaths.clear();
   renderLibraryView(data.browse);
   setStatus(`${data.count}개 영상을 삭제했습니다.`, "success");
@@ -463,25 +724,47 @@ async function bulkDeleteLibraryItems() {
   setStatus(`${data.count}개 영상을 삭제했습니다.`, "success");
 }
 
+function apiErrorMessage(body, fallback = "요청에 실패했습니다.") {
+  if (!body) {
+    return fallback;
+  }
+  const message = body.error || body.detail;
+  if (typeof message === "string" && message.trim()) {
+    return message;
+  }
+  if (Array.isArray(body.detail)) {
+    return body.detail.map((item) => item.msg || JSON.stringify(item)).join("; ");
+  }
+  return fallback;
+}
+
 async function apiBlob(path, options) {
-  const response = await fetch(apiUrl(path), options);
+  const response = await fetch(apiUrl(path), { credentials: "same-origin", ...options });
   if (!response.ok) {
     const text = await response.text();
-    let detail = "요청에 실패했습니다.";
+    let body = null;
     try {
-      const body = text ? JSON.parse(text) : null;
-      detail = body?.detail || detail;
+      body = text ? JSON.parse(text) : null;
     } catch (err) {
-      detail = text || detail;
+      body = { detail: text };
     }
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    throw new Error(apiErrorMessage(body, text || "요청에 실패했습니다."));
   }
   return response.blob();
 }
 
+function getExportAction() {
+  const selected = document.querySelector('input[name="export-action"]:checked');
+  return selected ? selected.value : "send";
+}
+
+function isDetectorTarget(target) {
+  return target === "detector" || target === "yolo";
+}
+
 function getSendToTaskTarget() {
   const selected = document.querySelector('input[name="send-target"]:checked');
-  return selected ? selected.value : "yolo";
+  return selected ? selected.value : "detector";
 }
 
 function getSendToTaskMediaKind() {
@@ -490,17 +773,64 @@ function getSendToTaskMediaKind() {
 }
 
 function updateSendToTaskModal() {
+  const action = getExportAction();
   const target = getSendToTaskTarget();
   const mediaKindFieldset = document.getElementById("send-media-kind-fieldset");
   const frameSection = document.getElementById("send-frame-section");
   const destHint = document.getElementById("send-dest-hint");
   const summary = document.getElementById("send-to-task-summary");
+  const confirmBtn = document.getElementById("send-to-task-confirm");
+  const exportSection = document.getElementById("send-export-section");
+  const anonymizeSection = document.getElementById("export-anonymize-section");
+  const anonymizeCheckbox = document.getElementById("export-anonymize");
   const mediaKind = getSendToTaskMediaKind();
+  const isArchive = action === "archive";
 
-  mediaKindFieldset.hidden = target !== "vlm";
-  frameSection.hidden = target === "vlm" && mediaKind === "video";
-  destHint.textContent =
-    target === "yolo" ? "저장 위치: detector/generated" : "저장 위치: vlm/generated";
+  exportSection.hidden = isArchive;
+  document.querySelectorAll('input[name="send-target"]').forEach((input) => {
+    input.closest("fieldset").hidden = isArchive;
+  });
+  mediaKindFieldset.hidden = isArchive || target !== "vlm";
+  frameSection.hidden = isArchive || (target === "vlm" && mediaKind === "video");
+  destHint.hidden = isArchive;
+  if (!isArchive) {
+    destHint.textContent = isDetectorTarget(target)
+      ? mediaKind === "video"
+        ? "저장 위치: detector/videos/generate/<폴더명>/<영상명>/"
+        : "저장 위치: detector/generate/<폴더명>/<영상명>/"
+      : mediaKind === "video"
+        ? "저장 위치: vlm/videos/generate/<폴더명>/<영상명>/"
+        : "저장 위치: vlm/generate/<폴더명>/<영상명>/";
+  }
+
+  anonymizeCheckbox.disabled = isArchive;
+  if (isArchive) {
+    anonymizeCheckbox.checked = true;
+  }
+  const classButtons = document.getElementById("export-anonymize-classes");
+  const classHint = document.getElementById("export-class-hint");
+  const classHidden = isArchive ? false : !anonymizeCheckbox.checked;
+  if (classButtons) {
+    classButtons.hidden = classHidden;
+  }
+  if (classHint) {
+    classHint.hidden = classHidden;
+  }
+
+  const needsAnonymize = isArchive || anonymizeCheckbox.checked;
+  const classesReady = !needsAnonymize || getSelectedExportClasses().length > 0;
+  const weightsReady = !needsAnonymize || blurWeightsReady();
+  confirmBtn.disabled = !canRunExport() || !classesReady || !weightsReady;
+  confirmBtn.textContent = isArchive ? "비식별화 시작" : "시작";
+
+  if (isArchive) {
+    summary.textContent =
+      sendToTaskPaths.length === 1
+        ? `「${sendToTaskPaths[0].split("/").pop()}」을(를) Anony/ 폴더에 비식별화본으로 보관합니다.`
+        : `선택한 ${sendToTaskPaths.length}개 영상을 Anony/ 폴더에 보관합니다.`;
+    return;
+  }
+
   summary.textContent =
     sendToTaskPaths.length === 1
       ? `「${sendToTaskPaths[0].split("/").pop()}」을(를) 작업 폴더로 보냅니다.`
@@ -510,8 +840,13 @@ function updateSendToTaskModal() {
 function openSendToTaskModal(paths) {
   sendToTaskPaths = [...paths];
   document.getElementById("send-frame-interval").value = "30";
-  document.querySelector('input[name="send-target"][value="yolo"]').checked = true;
+  const defaultName = (libraryBrowsePath.split("/").filter(Boolean).pop() || paths[0].split("/").pop().replace(/\.[^.]+$/, "") || "generated");
+  document.getElementById("send-folder-name").value = defaultName;
+  document.querySelector('input[name="export-action"][value="send"]').checked = true;
+  document.querySelector('input[name="send-target"][value="detector"]').checked = true;
   document.querySelector('input[name="send-media-kind"][value="image"]').checked = true;
+  document.getElementById("export-anonymize").checked = true;
+  resetExportClassSelection();
   updateSendToTaskModal();
   document.getElementById("send-to-task-backdrop").hidden = false;
   document.getElementById("send-to-task-modal").hidden = false;
@@ -527,41 +862,274 @@ async function submitSendToTask() {
   if (!sendToTaskPaths.length) {
     return;
   }
-  const target = getSendToTaskTarget();
-  const mediaKind = target === "yolo" ? "image" : getSendToTaskMediaKind();
-  const intervalRaw = Number(document.getElementById("send-frame-interval").value);
-  const frameInterval = Number.isFinite(intervalRaw) ? Math.trunc(intervalRaw) : 0;
-  if (mediaKind === "image" && (frameInterval < 1 || frameInterval > 10000)) {
-    setStatus("추출 간격은 1~10000 사이여야 합니다.", "error");
+  if (!canMutateOutputs) {
+    setStatus(mutationDeniedMessage(), "error");
     return;
   }
 
+  const action = getExportAction();
+  const target = getSendToTaskTarget();
+  const mediaKind = isDetectorTarget(target) ? "image" : getSendToTaskMediaKind();
+  const folderName = document.getElementById("send-folder-name").value.trim();
+  const anonymize = action === "archive" || document.getElementById("export-anonymize").checked;
+  const selectedClasses = anonymize ? getSelectedExportClasses() : [];
+
+  if (action === "send" && !folderName) {
+    setStatus("저장 폴더명을 입력하세요.", "error");
+    return;
+  }
+  const intervalRaw = Number(document.getElementById("send-frame-interval").value);
+  const frameInterval = Number.isFinite(intervalRaw) ? Math.trunc(intervalRaw) : 0;
+  if (action === "send" && mediaKind === "image" && (frameInterval < 1 || frameInterval > 10000)) {
+    setStatus("추출 간격은 1~10000 사이여야 합니다.", "error");
+    return;
+  }
+  if (anonymize && !selectedClasses.length) {
+    setStatus("비식별화 대상을 하나 이상 선택하세요.", "error");
+    return;
+  }
+  if (anonymize && !blurWeightsReady()) {
+    setStatus(blurConfig.weights_load_error || "비식별화 가중치(.pt)가 준비되지 않았습니다.", "error");
+    return;
+  }
+
+  const paths = sendToTaskPaths.slice(0, 50);
+  closeSendToTaskModal();
+  switchView("library");
+
+  exportJobRunning = true;
+  updateLibraryBulkBar();
+  if (libraryCurrentItems.length) {
+    renderLibraryList(libraryCurrentItems, libraryBrowsePath);
+  }
+
+  clearExportProgress();
+  exportJobAnonymizing = action === "archive" || anonymize;
+  setExportAnonyNotice(exportJobAnonymizing);
+  setStatus(action === "archive" ? "비식별화 처리 중…" : "작업 처리 중…", "busy");
+
   const confirmBtn = document.getElementById("send-to-task-confirm");
   confirmBtn.disabled = true;
-  setStatus("작업 폴더로 보내는 중…", "busy");
   try {
-    const data = await api("/api/outputs/send-to-task", {
+    const started = await api("/api/outputs/export/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        paths: sendToTaskPaths,
+        paths,
         browse_path: libraryBrowsePath,
+        media_filter: getLibraryMediaFilter(),
+        action,
         target,
         media_kind: mediaKind,
         frame_interval: frameInterval,
+        folder_name: folderName,
+        anonymize,
+        classes: selectedClasses,
       }),
     });
-    closeSendToTaskModal();
-    if (data.media_kind === "video") {
-      setStatus(`${data.video_count}개 영상을 ${data.dest_root}(으)로 보냈습니다.`, "success");
+    const job = await waitForExportJob(started.id || started.job_id);
+    librarySelectedPaths.clear();
+    invalidateLibraryTreeCache();
+    if (job.browse) {
+      renderLibraryView(job.browse);
     } else {
-      setStatus(`${data.frame_count}장 이미지를 ${data.dest_root}(으)로 보냈습니다.`, "success");
+      await loadLibrary();
     }
+
+    if (job.state === "failed") {
+      updateExportProgress(job);
+      setStatus(job.error || "작업에 실패했습니다.", "error");
+      return;
+    }
+
+    if (action === "archive") {
+      setStatus(`${job.results?.length || paths.length}개 영상 비식별화 완료`, "success");
+    } else {
+      const last = (job.results || []).find((entry) => entry.frame_count != null || entry.dest_root);
+      if (last?.media_kind === "video" || last?.video_count) {
+        setStatus(`${last.video_count || 1}개 영상을 ${last.dest_root}(으)로 보냈습니다.`, "success");
+      } else if (last?.frame_count != null) {
+        setStatus(`${last.frame_count}장 이미지를 ${last.dest_root}(으)로 보냈습니다.`, "success");
+      } else {
+        setStatus("작업 폴더로 보냈습니다.", "success");
+      }
+    }
+    window.setTimeout(clearExportProgress, 4000);
   } catch (err) {
+    clearExportProgress();
     setStatus(err.message, "error");
   } finally {
+    exportJobRunning = false;
     confirmBtn.disabled = false;
+    updateLibraryBulkBar();
+    if (libraryCurrentItems.length) {
+      renderLibraryList(libraryCurrentItems, libraryBrowsePath);
+    }
   }
+}
+
+function getSelectedExportClasses() {
+  return [...document.querySelectorAll("#export-anonymize-classes .anonymize-class-btn.is-selected")]
+    .map((button) => Number(button.dataset.classId))
+    .filter((classId) => Number.isInteger(classId))
+    .sort((a, b) => a - b);
+}
+
+function setExportClassSelection(faceSelected, plateSelected) {
+  const faceBtn = document.getElementById("export-class-face");
+  const plateBtn = document.getElementById("export-class-plate");
+  faceBtn.classList.toggle("is-selected", faceSelected);
+  plateBtn.classList.toggle("is-selected", plateSelected);
+  faceBtn.setAttribute("aria-pressed", faceSelected ? "true" : "false");
+  plateBtn.setAttribute("aria-pressed", plateSelected ? "true" : "false");
+  updateExportClassHint();
+}
+
+function updateExportClassHint() {
+  const hint = document.getElementById("export-class-hint");
+  const selected = getSelectedExportClasses();
+  if (!selected.length) {
+    hint.textContent = "비식별화 대상을 하나 이상 선택하세요.";
+    return;
+  }
+  const labels = [];
+  if (selected.includes(ANONYMIZE_CLASS_OPTIONS.face)) {
+    labels.push("안면");
+  }
+  if (selected.includes(ANONYMIZE_CLASS_OPTIONS.plate)) {
+    labels.push("번호판");
+  }
+  hint.textContent = `선택: ${labels.join(", ")}`;
+}
+
+function toggleExportClass(button) {
+  const selected = getSelectedExportClasses();
+  const isSelected = button.classList.contains("is-selected");
+  if (isSelected && selected.length <= 1) {
+    setStatus("비식별화 대상은 하나 이상 선택해야 합니다.", "error");
+    return;
+  }
+  button.classList.toggle("is-selected", !isSelected);
+  button.setAttribute("aria-pressed", isSelected ? "false" : "true");
+  updateExportClassHint();
+  updateSendToTaskModal();
+}
+
+function resetExportClassSelection() {
+  setExportClassSelection(true, true);
+}
+
+function setExportAnonyNotice(visible) {
+  const notice = document.getElementById("export-anony-notice");
+  if (notice) {
+    notice.hidden = !visible;
+  }
+}
+
+function clearExportProgress() {
+  const wrap = document.getElementById("export-progress-wrap");
+  const status = document.getElementById("export-progress-status");
+  const step = document.getElementById("export-progress-step");
+  const bar = document.getElementById("export-progress-bar");
+  const detail = document.getElementById("export-progress-detail");
+  wrap.hidden = true;
+  wrap.classList.remove("is-error");
+  status.textContent = "준비 중…";
+  step.textContent = "";
+  bar.style.width = "0%";
+  bar.classList.add("is-indeterminate");
+  detail.textContent = "";
+  exportJobAnonymizing = false;
+  setExportAnonyNotice(false);
+}
+
+function updateExportProgress(job) {
+  const wrap = document.getElementById("export-progress-wrap");
+  const status = document.getElementById("export-progress-status");
+  const step = document.getElementById("export-progress-step");
+  const bar = document.getElementById("export-progress-bar");
+  const detail = document.getElementById("export-progress-detail");
+  if (!job) {
+    return;
+  }
+
+  wrap.hidden = false;
+  wrap.classList.remove("is-error");
+  const progress = job.progress || {};
+  const isAnonymizing = exportJobAnonymizing || job.action === "archive";
+  setExportAnonyNotice(isAnonymizing && job.state === "running");
+  status.textContent =
+    job.state === "done" ? "완료" : job.state === "failed" ? "실패" : job.action === "archive" ? "비식별화 처리 중…" : "작업 처리 중…";
+
+  if (job.state === "failed") {
+    wrap.classList.add("is-error");
+    bar.classList.remove("is-indeterminate");
+    bar.style.width = "0%";
+    step.textContent = "";
+    detail.textContent = job.error || "";
+    setExportAnonyNotice(false);
+    return;
+  }
+
+  const label = progress.path ? progress.path.split("/").pop() : "";
+  if (progress.total) {
+    step.textContent = label ? `${progress.current}/${progress.total} · ${label}` : `${progress.current}/${progress.total}`;
+  } else {
+    step.textContent = label;
+  }
+
+  if (progress.frame && progress.total_frames) {
+    const within = Math.min(1, progress.frame / progress.total_frames);
+    const overall = progress.total ? ((progress.current - 1 + within) / progress.total) * 100 : within * 100;
+    bar.classList.remove("is-indeterminate");
+    bar.style.width = `${Math.max(0, Math.min(100, overall))}%`;
+    detail.textContent = `프레임 ${progress.frame}/${progress.total_frames}`;
+    return;
+  }
+
+  if (job.state === "done") {
+    bar.classList.remove("is-indeterminate");
+    bar.style.width = "100%";
+    detail.textContent = "";
+    setExportAnonyNotice(false);
+    return;
+  }
+
+  if (progress.total) {
+    const overall = (progress.current / progress.total) * 100;
+    bar.classList.remove("is-indeterminate");
+    bar.style.width = `${Math.max(0, Math.min(100, overall))}%`;
+    detail.textContent = `${Math.round(overall)}%`;
+    return;
+  }
+
+  bar.classList.add("is-indeterminate");
+  bar.style.width = "35%";
+  detail.textContent = progress.phase === "encoding" ? "H.264 인코딩 중…" : "";
+}
+
+function waitForExportJob(jobId) {
+  return new Promise((resolve, reject) => {
+    const tick = async () => {
+      try {
+        const job = await api(`/api/outputs/export/jobs/${jobId}`);
+        updateExportProgress(job);
+        if (job.state === "running") {
+          const progress = job.progress || {};
+          const label = progress.path ? progress.path.split("/").pop() : "";
+          setStatus(label ? `${label} 처리 중…` : "작업 처리 중…", "busy");
+          return;
+        }
+        clearInterval(timer);
+        resolve(job);
+      } catch (err) {
+        clearInterval(timer);
+        reject(err);
+      }
+    };
+    const timer = setInterval(tick, 700);
+    tick();
+  });
 }
 
 async function bulkDownloadLibraryItems() {
@@ -586,6 +1154,9 @@ async function bulkDownloadLibraryItems() {
 }
 
 async function loadLibrary() {
+  invalidateLibraryTreeCache();
+  libraryTreeSyncedPath = null;
+  expandTreeToPath(libraryBrowsePath);
   const data = await browseFolder(libraryBrowsePath);
   renderLibraryView(data);
   libraryLoaded = true;
@@ -874,7 +1445,7 @@ function closeSettings() {
 }
 
 async function api(path, options) {
-  const response = await fetch(apiUrl(path), options);
+  const response = await fetch(apiUrl(path), { credentials: "same-origin", ...options });
   const text = await response.text();
   let body = null;
   try {
@@ -883,8 +1454,7 @@ async function api(path, options) {
     body = { detail: text };
   }
   if (!response.ok) {
-    const detail = body && body.detail ? body.detail : "요청에 실패했습니다.";
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    throw new Error(apiErrorMessage(body));
   }
   return body;
 }
@@ -947,6 +1517,9 @@ async function loadBootstrap() {
   }
   fillSelect(document.getElementById("duration"), data.durations, (item) => item.label);
   document.getElementById("server-url").value = data.config.server_url;
+  if (data.blur) {
+    blurConfig = { ...blurConfig, ...data.blur };
+  }
   libraryRootLabel = data.root_label || "generate_datasets";
   document.getElementById("output-dir").value = data.host_output_dir || data.config.output_dir;
   outputSubdir = data.config.output_subdir || "";
@@ -1054,6 +1627,7 @@ function buildForm(seedValue, useRandom) {
   form.append("duration_sec", document.getElementById("duration").value);
   form.append("random_seed", useRandom ? "true" : "false");
   form.append("seed", useRandom ? "" : String(seedValue));
+  form.append("output_name", document.getElementById("output-name").value.trim());
   const imageInput = document.getElementById("i2v-image");
   if (imageInput.files[0]) {
     form.append("image", imageInput.files[0]);
@@ -1124,12 +1698,28 @@ async function generate() {
   }
 }
 
+document.addEventListener("click", () => {
+  closeAllLibraryItemMenus();
+});
+
 document.getElementById("tab-create").addEventListener("click", () => switchView("create"));
-document.getElementById("tab-library").addEventListener("click", () => switchView("library"));
+document.getElementById("tab-library").addEventListener("click", () => switchView("library", { reloadLibrary: true }));
 document.getElementById("refresh-library").addEventListener("click", () => {
   loadLibrary()
-    .then(() => setStatus("저장 폴더를 새로고침했습니다.", "success"))
+    .then(() => setStatus("브라우저를 새로고침했습니다.", "success"))
     .catch((err) => setStatus(err.message, "error"));
+});
+document.getElementById("refresh-library-tree").addEventListener("click", () => {
+  invalidateLibraryTreeCache();
+  renderLibraryTree()
+    .then(() => setStatus("폴더 트리를 새로고침했습니다.", "success"))
+    .catch((err) => setStatus(err.message, "error"));
+});
+document.querySelectorAll('input[name="library-media-filter"]').forEach((input) => {
+  input.addEventListener("change", () => {
+    libraryMediaFilter = input.value;
+    refreshLibraryBrowse().catch((err) => setStatus(err.message, "error"));
+  });
 });
 document.getElementById("clear-library-folder").addEventListener("click", () => {
   clearCurrentLibraryFolder().catch((err) => setStatus(err.message, "error"));
@@ -1176,12 +1766,19 @@ document.getElementById("save-settings").addEventListener("click", () => {
 });
 document.getElementById("training-block-ok").addEventListener("click", hideTrainingBlockModal);
 document.getElementById("training-block-backdrop").addEventListener("click", hideTrainingBlockModal);
+document.getElementById("export-class-face").addEventListener("click", (event) => {
+  toggleExportClass(event.currentTarget);
+});
+document.getElementById("export-class-plate").addEventListener("click", (event) => {
+  toggleExportClass(event.currentTarget);
+});
+document.getElementById("export-anonymize").addEventListener("change", updateSendToTaskModal);
 document.getElementById("send-to-task-cancel").addEventListener("click", closeSendToTaskModal);
 document.getElementById("send-to-task-backdrop").addEventListener("click", closeSendToTaskModal);
 document.getElementById("send-to-task-confirm").addEventListener("click", () => {
   submitSendToTask().catch((err) => setStatus(err.message, "error"));
 });
-document.querySelectorAll('input[name="send-target"], input[name="send-media-kind"]').forEach((input) => {
+document.querySelectorAll('input[name="export-action"], input[name="send-target"], input[name="send-media-kind"]').forEach((input) => {
   input.addEventListener("change", updateSendToTaskModal);
 });
 document.getElementById("generate").addEventListener("click", generate);
@@ -1192,4 +1789,38 @@ document.getElementById("i2v-prompt").addEventListener("input", () => {
     setFieldError("field-prompt", "error-prompt", "");
   }
 });
-loadBootstrap().catch((err) => setStatus(err.message, "error"));
+loadBootstrap()
+  .then(() => loadLibrary())
+  .then(() => switchView("library"))
+  .catch((err) => setStatus(err.message, "error"));
+function applyMutationPermission(me) {
+  canMutateOutputs = Boolean(me && (me.is_admin || (me.permissions || []).includes("DATA_GENERATE")));
+  updateLibraryBulkBar();
+  if (libraryCurrentItems.length) {
+    renderLibraryList(libraryCurrentItems, libraryBrowsePath);
+  }
+  if (canMutateOutputs) {
+    return;
+  }
+  const button = document.getElementById("generate");
+  button.disabled = true;
+  button.title = mutationDeniedMessage();
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+  new MutationObserver(() => {
+    button.disabled = true;
+  }).observe(button, { attributes: true, attributeFilter: ["disabled"] });
+  setStatus("기존 결과는 조회할 수 있지만 변경·생성 작업에는 데이터 생성 권한이 필요합니다.", "error");
+}
+
+// Permission-aware UX. The API middleware is the security boundary.
+fetch("/access-api/auth/me", { credentials: "same-origin", cache: "no-store" })
+  .then((r) => (r.ok ? r.json() : Promise.reject()))
+  .then((me) => applyMutationPermission(me))
+  .catch(() => {
+    canMutateOutputs = false;
+    updateLibraryBulkBar();
+    setStatus(mutationDeniedMessage(), "error");
+  });

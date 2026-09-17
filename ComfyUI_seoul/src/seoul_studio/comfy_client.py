@@ -200,11 +200,14 @@ class ComfyClient:
             prompt_id = self.submit_prompt(prompt_graph)
             emit("생성 진행 중", log=False)
             outputs = self.wait_for_outputs(prompt_id, emit)
+            output_ready_at = time.time()
             emit("결과 저장 중")
             dest = Path(output_dir).resolve()
             dest.mkdir(parents=True, exist_ok=True)
             output_root = _find_output_root(dest)
-            file_info = resolve_best_video_output(outputs, output_root, dest)
+            file_info = resolve_best_video_output(
+                outputs, output_root, dest, min_mtime=output_ready_at
+            )
             local_path = persist_output_video(
                 file_info,
                 dest=dest,
@@ -214,6 +217,7 @@ class ComfyClient:
             _cleanup_duplicate_media(dest, local_path)
             _sync_preview_png_number(output_root, local_path)
             _cleanup_comfy_root_copies(output_root, local_path)
+            local_path = apply_custom_output_name(local_path, job.output_name)
             emit("완료")
             self._notify_event(
                 on_event,
@@ -226,7 +230,7 @@ class ComfyClient:
             return GenerationResult(
                 prompt_id=prompt_id,
                 output_path=str(local_path),
-                filename=file_info["filename"],
+                filename=local_path.name,
             )
         finally:
             stop_ws.set()
@@ -466,10 +470,15 @@ def extract_media_file(outputs: dict[str, Any]) -> dict[str, str]:
     return _pick_preferred_media_file(files)
 
 
+MAX_OUTPUT_SEQUENCE_DRIFT = 5
+
+
 def resolve_best_video_output(
     outputs: dict[str, Any],
     output_root: Path,
     dest: Path,
+    *,
+    min_mtime: Optional[float] = None,
 ) -> dict[str, str]:
     file_info = extract_media_file(outputs)
     parsed = parse_media_basename(file_info["filename"])
@@ -478,12 +487,19 @@ def resolve_best_video_output(
 
     prefix, api_seq, _width = parsed
     # ComfyUI는 보통 output 루트에 직접 씁니다. dest(저장 폴더)의 예전 파일은 제외합니다.
-    on_disk = find_newest_video_file(output_root, prefix=prefix)
+    # 이 ComfyUI 서버는 이 앱 전용이 아니라 다른 워크플로/도구와 공유될 수 있으므로,
+    # 폴더 스캔으로 "더 큰 번호"를 찾는 이 안전장치가 엉뚱한 영상을 고르지 않도록
+    # (1) min_mtime: 이번 작업 결과가 나온 시점 이후에 생긴 파일만, (2) 번호 차이가
+    # MAX_OUTPUT_SEQUENCE_DRIFT 이내인 파일만 후보로 인정한다.
+    on_disk = find_newest_video_file(output_root, prefix=prefix, min_mtime=min_mtime)
     if on_disk is None:
         return file_info
 
     disk_parsed = parse_media_basename(on_disk.name)
-    if disk_parsed and disk_parsed[1] > api_seq:
+    if (
+        disk_parsed
+        and api_seq < disk_parsed[1] <= api_seq + MAX_OUTPUT_SEQUENCE_DRIFT
+    ):
         return file_info_from_disk_path(on_disk, output_root)
     return file_info
 
@@ -546,7 +562,9 @@ def parse_media_basename(filename: str) -> Optional[tuple[str, int, int]]:
     return match.group(1), int(match.group(2)), len(match.group(2))
 
 
-def find_newest_video_file(*directories: Path, prefix: str) -> Optional[Path]:
+def find_newest_video_file(
+    *directories: Path, prefix: str, min_mtime: Optional[float] = None
+) -> Optional[Path]:
     found: list[Path] = []
     for directory in directories:
         if not directory.is_dir():
@@ -555,8 +573,11 @@ def find_newest_video_file(*directories: Path, prefix: str) -> Optional[Path]:
             if not path.is_file() or path.suffix.lower() not in VIDEO_SUFFIXES:
                 continue
             parsed = parse_media_basename(path.name)
-            if parsed and parsed[0] == prefix:
-                found.append(path)
+            if not parsed or parsed[0] != prefix:
+                continue
+            if min_mtime is not None and path.stat().st_mtime < min_mtime:
+                continue
+            found.append(path)
     if not found:
         return None
     return max(found, key=lambda path: (parse_media_basename(path.name) or ("", -1, 0))[1])
@@ -703,6 +724,41 @@ def _cleanup_duplicate_media(dest: Path, kept_path: Path) -> None:
             path.unlink()
         except OSError:
             pass
+
+
+def apply_custom_output_name(local_path: Path, output_name: Optional[str]) -> Path:
+    """사용자가 지정한 파일명으로 결과 영상(및 있으면 짝이 되는 프리뷰 png)을 바꾼다.
+    같은 이름이 이미 있으면 뒤에 번호를 붙여 겹치지 않게 한다."""
+    if not output_name:
+        return local_path
+
+    dest = local_path.parent
+    suffix = local_path.suffix
+    candidate = dest / f"{output_name}{suffix}"
+    counter = 2
+    while candidate.resolve() != local_path.resolve() and candidate.exists():
+        candidate = dest / f"{output_name}_{counter}{suffix}"
+        counter += 1
+
+    if candidate.resolve() == local_path.resolve():
+        return local_path
+
+    try:
+        local_path.rename(candidate)
+    except OSError:
+        return local_path
+
+    parsed = parse_media_basename(local_path.name)
+    if parsed:
+        prefix, number, width = parsed
+        preview_png = dest / f"{prefix}_{number:0{width}d}.png"
+        if preview_png.is_file():
+            try:
+                preview_png.rename(candidate.with_suffix(".png"))
+            except OSError:
+                pass
+
+    return candidate
 
 
 def _history_failed(status: dict[str, Any]) -> bool:

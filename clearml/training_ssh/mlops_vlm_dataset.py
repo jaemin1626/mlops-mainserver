@@ -33,7 +33,10 @@ def build(root, query):
         if parts[0] in {'images','videos'}:
             mirrored=(dataset/(parts[0]+'_json')/Path(*parts[1:])).resolve()
             if mirrored.is_relative_to(dataset) and mirrored.is_dir():sources.append(mirrored)
-        for source in sources:paths.update(p.resolve() for p in source.rglob('*.json') if p.resolve().is_relative_to(dataset))
+        for source in sources:paths.update(
+            p.resolve() for p in source.rglob('*.json')
+            if not p.name.endswith('.meta.json') and p.resolve().is_relative_to(dataset)
+        )
     rows=[];seen=set();skipped=0;duplicates=0
     for path in sorted(paths):
         try:samples=utils.load_json_samples(path)

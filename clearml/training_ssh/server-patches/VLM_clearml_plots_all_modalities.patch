@@ -1,0 +1,123 @@
+--- VLM/scripts/train/train_clearml.py
++++ VLM/scripts/train/train_clearml.py
+@@ -1479,17 +1479,18 @@
+             if is_main_process() and _active_clearml_task is not None:
+                 _active_clearml_task.set_parameter("Training/metric_for_best_model", "eval_loss")
+ 
+-        if is_main_process() and cls_metrics:
+-            log_main(
+-                f"Valid binary eval (step {self.state.global_step}): "
+-                f"n={int(cls_metrics['eval_count'])}, "
+-                f"acc={cls_metrics['accuracy']:.4f}, "
+-                f"f1_macro={cls_metrics['f1_macro']:.4f}, "
+-                f"f1_ne={cls_metrics['f1_ne']:.4f}, "
+-                f"f1_ani={cls_metrics['f1_ani']:.4f}"
+-            )
+-            for key, value in cls_metrics.items():
+-                metrics[f"{metric_key_prefix}_{key}"] = value
++        if is_main_process():
++            if cls_metrics:
++                log_main(
++                    f"Valid binary eval (step {self.state.global_step}): "
++                    f"n={int(cls_metrics['eval_count'])}, "
++                    f"acc={cls_metrics['accuracy']:.4f}, "
++                    f"f1_macro={cls_metrics['f1_macro']:.4f}, "
++                    f"f1_ne={cls_metrics['f1_ne']:.4f}, "
++                    f"f1_ani={cls_metrics['f1_ani']:.4f}"
++                )
++                for key, value in cls_metrics.items():
++                    metrics[f"{metric_key_prefix}_{key}"] = value
+             for callback in self.callback_handler.callbacks:
+                 if isinstance(callback, VLMClearMLCallback):
+                     callback.stash_eval_for_publish(
+@@ -1646,7 +1647,7 @@
+         """Publish rank-0 scalars, plots, and the local checkpoint after trainer.train()."""
+         if not is_main_process():
+             return
+-        if self.pending_eval_state is None or not self.pending_eval_cls_metrics:
++        if self.pending_eval_state is None:
+             return
+ 
+         state = self.pending_eval_state
+@@ -1661,38 +1662,26 @@
+             self._report_scalars(logger, metrics, iteration, "valid")
+ 
+         eval_loss = scalar_value(metrics.get("eval_loss"))
+-        valid_entry: dict[str, float] = {
+-            "iteration": float(iteration),
+-            "f1_macro": cls_metrics["f1_macro"],
+-            "accuracy": cls_metrics["accuracy"],
+-            "f1_ne": cls_metrics["f1_ne"],
+-            "f1_ani": cls_metrics["f1_ani"],
+-        }
++        valid_entry: dict[str, float] = {"iteration": float(iteration)}
++        for key in ("f1_macro", "accuracy", "f1_ne", "f1_ani"):
++            if key in cls_metrics:
++                valid_entry[key] = float(cls_metrics[key])
+         if eval_loss is not None:
+             valid_entry["loss"] = eval_loss
+         self.valid_history.append(valid_entry)
+ 
+-        if logger is not None:
+-            scalar_map = {
+-                "accuracy": cls_metrics["accuracy"],
+-                "f1_macro": cls_metrics["f1_macro"],
+-                "f1_ne": cls_metrics["f1_ne"],
+-                "f1_ani": cls_metrics["f1_ani"],
+-                "precision_ne": cls_metrics["precision_ne"],
+-                "precision_ani": cls_metrics["precision_ani"],
+-                "recall_ne": cls_metrics["recall_ne"],
+-                "recall_ani": cls_metrics["recall_ani"],
+-                "eval_count": cls_metrics["eval_count"],
+-            }
+-            for series, value in scalar_map.items():
++        if logger is not None and cls_metrics:
++            for series, value in cls_metrics.items():
+                 logger.report_scalar(title="valid", series=series, value=float(value), iteration=iteration)
+ 
+         if logger is not None:
+-            confusion = [[0, 0], [0, 0]]
+-            label_to_idx = {"네": 0, "아니오": 1}
+-            for gt, pred in label_pairs:
+-                if gt in label_to_idx and pred in label_to_idx:
+-                    confusion[label_to_idx[gt]][label_to_idx[pred]] += 1
++            confusion = None
++            if cls_metrics:
++                confusion = [[0, 0], [0, 0]]
++                label_to_idx = {"네": 0, "아니오": 1}
++                for gt, pred in label_pairs:
++                    if gt in label_to_idx and pred in label_to_idx:
++                        confusion[label_to_idx[gt]][label_to_idx[pred]] += 1
+             self._publish_plots(logger, iteration, confusion, debug_candidates)
+             if self.run_plots_dir is not None:
+                 log_main(f"Saved ClearML plots under: {self.run_plots_dir}")
+@@ -1767,18 +1756,19 @@
+         self,
+         logger,
+         iteration: int,
+-        confusion: list[list[int]],
++        confusion: list[list[int]] | None,
+         debug_candidates: list[tuple[Path, str, str]],
+     ) -> None:
+-        confusion_fig = plot_confusion_matrix_figure(confusion, BINARY_LABELS)
+-        upload_matplotlib_plot(
+-            logger,
+-            title="Confusion Matrix",
+-            series="confusion_matrix",
+-            figure=confusion_fig,
+-            iteration=iteration,
+-            local_path=self._plot_path("confusion_matrix", iteration),
+-        )
++        if confusion is not None:
++            confusion_fig = plot_confusion_matrix_figure(confusion, BINARY_LABELS)
++            upload_matplotlib_plot(
++                logger,
++                title="Confusion Matrix",
++                series="confusion_matrix",
++                figure=confusion_fig,
++                iteration=iteration,
++                local_path=self._plot_path("confusion_matrix", iteration),
++            )
+ 
+         debug_fig = plot_debug_samples_figure(debug_candidates)
+         if debug_fig is not None:

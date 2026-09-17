@@ -12,10 +12,15 @@ ENV PYTHONUNBUFFERED=1 \
     SEOUL_STUDIO_WORKFLOW_DIR=/app/workflows
 
 COPY requirements.txt .
+ENV SEOUL_STUDIO_YOLOV7_DIR=/app/yolov7
+
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg git \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir -r requirements.txt \
+    && git clone --depth 1 https://github.com/WongKinYiu/yolov7.git /app/yolov7 \
+    && rm -rf /app/yolov7/.git \
+    && pip install --no-cache-dir seaborn
 
 COPY src ./src
 COPY workflows ./workflows

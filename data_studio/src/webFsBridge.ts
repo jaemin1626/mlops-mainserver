@@ -99,6 +99,9 @@ export function installWebFsBridge(): void {
     scanYoloDashboard: async (detectorRoot) => {
       return apiJson(`${API}/dashboard/yolo-summary?root=${encodeURIComponent(detectorRoot || '/data/datasets/detector')}`);
     },
+    scanVlmDashboard: async (vlmRoot) => {
+      return apiJson(`${API}/dashboard/vlm-summary?root=${encodeURIComponent(vlmRoot || '/data/datasets/vlm')}`);
+    },
     scanFolder: async (dirPath) => {
       const data = await apiJson<{ items: OfflineImageItem[] }>(
         `${API}/fs/images?path=${encodeURIComponent(dirPath)}`

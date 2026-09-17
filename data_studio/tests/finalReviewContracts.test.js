@@ -89,7 +89,7 @@ test('dataset entry paths and VLM per-image folder workflow are configured', () 
   assert.match(readProjectFile('src/webFsBridge.ts'), /scanMediaFolder:[\s\S]*?\/fs\/media\?path=/);
   assert.match(vlm, /item\.jsonPath/);
   assert.match(vlmPerImage, /buildPerImageJsonFileContent/);
-  assert.match(readProjectFile('shared/vlmJsonPaths.js'), /images_json/);
+  assert.match(readProjectFile('shared/vlmJsonPaths.js'), /sharing the same stem/);
   assert.match(readProjectFile('server/fsRoutes.js'), /vlmJsonPathForMediaPath/);
   assert.match(
     electronMain,

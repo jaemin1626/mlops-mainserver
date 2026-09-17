@@ -1,10 +1,11 @@
 """Run on the training server to check tree selection using disposable fixtures."""
 import json
+import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
-sys.path.insert(0,'/home/intellivix/train/scripts')
+sys.path.insert(0,os.environ.get('TRAINING_SSH_ROOT','/home/intellivix/train')+'/scripts')
 from mlops_dataset_tree import ROOT,inventory,select,prepare,upload
 with tempfile.TemporaryDirectory() as tmp:
     root=Path(tmp);detector=root/'Dataset/detector/trainset';detector.mkdir(parents=True)
@@ -14,6 +15,14 @@ with tempfile.TemporaryDirectory() as tmp:
     cat=inventory(root,'detector');assert len(cat['records'])==10 and cat['skipped']==2
     q={'dataset_type':'detector','selected_folders':['.','trainset'],'classes':['person']}
     state,_=select(root,q);assert len(state['selected_files'])==10 and (len(state['train']),len(state['valid']))==(9,1)
+    mismatch=detector/'class-mismatch';mismatch.mkdir()
+    for i in range(2):
+        (mismatch/f'{i}.jpg').write_bytes(b'mismatch');(mismatch/f'{i}.txt').write_text('2 0.5 0.5 0.2 0.2\n')
+    try:prepare(root,{'dataset_type':'detector','selected_folders':['trainset/class-mismatch'],'classes':['person','car']})
+    except ValueError as exc:
+        assert '최대 클래스 번호는 2' in str(exc) and '클래스는 2개' in str(exc),exc
+    else:raise AssertionError('class count mismatch accepted')
+    shutil.rmtree(mismatch)
     first=prepare(root,q);snapshot=(root/first['manifest']['bundle'].removeprefix('/workspace/')/'manifest.json').read_text()
     source=first['manifest'];q.update(source_manifest=source,selected_files=source['selected_files'][:5]);second=prepare(root,q)
     assert first['token']!=second['token'] and second['manifest']['file_count']==5

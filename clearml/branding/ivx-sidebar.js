@@ -1,4 +1,6 @@
 (function () {
+  if (window.__ivxSidebarLoaded) return;
+  window.__ivxSidebarLoaded = true;
   var DATA_STUDIO_URL = '/data-studio/';
   var SEOUL_STUDIO_URL = '/seoul-studio/';
 
@@ -79,16 +81,14 @@
     content.appendChild(panel);
     var shadow = panel.attachShadow({mode:'open'});
 
-    fetch('/admin-embedded.html?v=3', {cache:'no-store'}).then(function (response) {
+    fetch('/admin-embedded.html?v=4', {cache:'no-store'}).then(function (response) {
       return response.text();
     }).then(function (html) {
       var doc = new DOMParser().parseFromString(html, 'text/html');
       var style = doc.querySelector('style');
       var main = doc.querySelector('main');
       shadow.innerHTML = '<style>:host{display:block;min-height:100%;background:#07111d}' + (style ? style.textContent : '') + '</style>' + (main ? main.outerHTML : '<main>Admin 화면을 불러오지 못했습니다.</main>');
-      var users = shadow.querySelector('#users');
-      var data = [['김철수','chulsoo@intellivix.com','Admin',1],['이영희','younghee@intellivix.com','Worker',1],['박지훈','jihoon@intellivix.com','Reviewer',0],['최민지','minji@intellivix.com','Admin',1],['정우성','woosung@intellivix.com','Worker',1],['한지민','jimin@intellivix.com','Admin',1],['오세훈','sehoon@intellivix.com','Worker',0],['김다은','daeun@intellivix.com','Reviewer',1],['이준호','junho@intellivix.com','Worker',1],['배수빈','subin@intellivix.com','Admin',1]];
-      if (users) users.innerHTML = data.map(function (u) { return '<div class="row"><span>□</span><span class="user"><span class="avatar">'+u[0][0]+'</span><span><b>'+u[0]+'</b><small class="email">'+u[1]+'</small></span></span><span><select class="select"><option>'+u[2]+'</option><option>Worker</option><option>Reviewer</option></select></span><span><span class="status '+(u[3]?'':'off')+'"><i class="dot"></i>'+(u[3]?'Active':'Inactive')+'</span></span><span class="actions"><button>Edit</button><button class="'+(u[3]?'danger':'')+'">'+(u[3]?'Deactivate':'Activate')+'</button></span></div>'; }).join('');
+      if (window.ivxInitAdminApp) window.ivxInitAdminApp(shadow);
     });
 
     document.querySelectorAll('body *').forEach(function (node) {
@@ -102,6 +102,11 @@
 
   function syncSettingsAdmin(root) {
     if (!/^\/settings(?:\/|$)/.test(location.pathname) || root.getElementById('ivx-settings-admin')) return;
+    if (window.__ivxAccessAdmin === undefined) {
+      if (!window.__ivxAccessLookup) window.__ivxAccessLookup = fetch('/access-api/auth/me',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(me){window.__ivxAccessAdmin=!!(me&&me.is_admin);applySidebarCustomizations(document);}).catch(function(){window.__ivxAccessAdmin=false;});
+      return;
+    }
+    if (!window.__ivxAccessAdmin) return;
     var items=Array.from(root.querySelectorAll('sm-settings mat-drawer mat-list-item'));
     var reference=items.find(function(item){return (item.textContent||'').trim()==='Profile';});
     if (!reference) return;
@@ -178,14 +183,15 @@
 /* Training settings: isolated modal, using the existing sidebar container. */
 (function(){
  if(window.__ivxTrainNav)return;window.__ivxTrainNav=true;
- var dialog, opener;
+ var dialog, opener, canTrain=false;
  var style=document.createElement('style');
- style.textContent='#ivx-train-nav{display:flex!important;align-items:center;justify-content:center;color:var(--color-primary);font:22px Heebo,sans-serif;cursor:pointer}#ivx-train-dialog{border:1px solid #344358;border-radius:16px;padding:0;width:min(1560px,94vw);height:92vh;max-width:94vw;max-height:94vh;background:#0e131a;box-shadow:0 24px 90px #0008;overflow:hidden}#ivx-train-dialog::backdrop{background:#080d16b8;backdrop-filter:blur(3px)}#ivx-train-dialog iframe{border:0;width:100%;height:100%;display:block}@media(max-width:760px){#ivx-train-dialog{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0}}';
+ style.textContent='#ivx-train-nav{display:flex!important;align-items:center;justify-content:center;color:var(--color-primary);font:22px Heebo,sans-serif;cursor:pointer}#ivx-train-nav[aria-disabled="true"]{color:#66758a!important;cursor:not-allowed!important;opacity:.5}#ivx-train-dialog{border:1px solid #344358;border-radius:16px;padding:0;width:min(1560px,94vw);height:92vh;max-width:94vw;max-height:94vh;background:#0e131a;box-shadow:0 24px 90px #0008;overflow:hidden}#ivx-train-dialog::backdrop{background:#080d16b8;backdrop-filter:blur(3px)}#ivx-train-dialog iframe{border:0;width:100%;height:100%;display:block}@media(max-width:760px){#ivx-train-dialog{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0}}';
  document.head.appendChild(style);
  function close(){if(dialog?.open)dialog.close();if(opener?.isConnected)opener.focus();}
- function open(e){e.preventDefault();opener=e.currentTarget;if(!dialog){dialog=document.createElement('dialog');dialog.id='ivx-train-dialog';dialog.setAttribute('aria-label','모델 학습 설정');var frame=document.createElement('iframe');frame.title='Detector 및 VLM 학습 설정';frame.src='/train/';dialog.appendChild(frame);document.body.appendChild(dialog);dialog.addEventListener('cancel',e=>{e.preventDefault();close();});}dialog.showModal();}
+ function open(e){e.preventDefault();if(!canTrain){e.stopPropagation();e.stopImmediatePropagation();return;}opener=e.currentTarget;if(!dialog){dialog=document.createElement('dialog');dialog.id='ivx-train-dialog';dialog.setAttribute('aria-label','모델 학습 설정');var frame=document.createElement('iframe');frame.title='Detector 및 VLM 학습 설정';frame.src='/train/';dialog.appendChild(frame);document.body.appendChild(dialog);dialog.addEventListener('cancel',e=>{e.preventDefault();close();});}else{dialog.querySelector('iframe').contentWindow.postMessage({type:'ivx-train-reopened'},location.origin);}dialog.showModal();}
  window.addEventListener('message',e=>{if(e.origin===location.origin&&dialog&&e.source===dialog.querySelector('iframe').contentWindow&&e.data?.type==='ivx-close-train')close();});
- function sync(){var items=document.querySelector('sm-side-nav .items-container');if(!items||items.querySelector('#ivx-train-nav'))return;var a=document.createElement('a');a.id='ivx-train-nav';a.className='item';a.href='/train/';a.title='모델 학습 · Train';a.setAttribute('aria-label','모델 학습 · Train');a.textContent='▶';a.addEventListener('click',open);items.appendChild(a);}
- function boot(){new MutationObserver(sync).observe(document.body,{childList:true,subtree:true});sync();}
+ function applyPermission(){var a=document.querySelector('#ivx-train-nav');if(!a)return;a.setAttribute('aria-disabled',canTrain?'false':'true');a.title=canTrain?'모델 학습 · Train':'모델 학습 및 배포 권한이 필요합니다.';if(canTrain){a.href='/train/';a.tabIndex=0;}else{a.removeAttribute('href');a.tabIndex=-1;if(dialog?.open)close();}}
+ function sync(){var items=document.querySelector('sm-side-nav .items-container'),a=items&&items.querySelector('#ivx-train-nav');if(!items)return;if(!a){a=document.createElement('a');a.id='ivx-train-nav';a.className='item';a.setAttribute('aria-label','모델 학습 · Train');a.textContent='▶';a.addEventListener('click',open,true);items.appendChild(a);}applyPermission();}
+ function boot(){new MutationObserver(sync).observe(document.body,{childList:true,subtree:true});sync();fetch('/access-api/auth/me',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(me){canTrain=!!(me&&(me.is_admin||(me.permissions||[]).includes('TRAIN_DEPLOY')));applyPermission();}).catch(function(){canTrain=false;applyPermission();});}
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();

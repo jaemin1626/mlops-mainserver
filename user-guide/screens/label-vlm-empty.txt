@@ -1,0 +1,18 @@
+Intellivix Data Studio
+홈
+Detector
+VLM 작업
+폴더 열기
+이동 시 자동 저장
+검수자
+Intellivix Admin
+전체
+작업중
+검수대기
+승인
+반려
+meta: 미디어와 같은 폴더의 *.meta.json
+
+VLM 작업: 미디어 폴더를 열어 주세요 (Ctrl+O)
+
+태그 JSON은 미디어와 같은 폴더의 같은이름.json, 검수 상태는 같은이름.meta.json

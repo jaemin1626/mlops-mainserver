@@ -1,0 +1,50 @@
+Intellivix Video Studio
+브라우저
+이미지 → 영상
+
+준비됨
+
+연결 설정
+폴더
+↻
+▼
+generate_datasets
+▼
+thisisfolder
+Anony
+브라우저
+
+저장된 영상을 폴더별로 확인합니다. 저장 위치 변경은 연결 설정에서 하세요.
+
+현재 폴더 비우기
+새로고침
+현재
+generate_datasets/thisisfolder
+호스트
+/opt/clearml/data/generate_datasets/thisisfolder
+generate_datasets
+/
+thisisfolder
+표시
+비식별화
+원본
+전체
+비식별화 안내
+처리된 영상은 현재 폴더의 Anony/ 하위에 저장됩니다.
+
+비식별화 영상은 Anony/ 폴더에 저장됩니다. 왼쪽 트리에서 폴더를 선택하세요.
+
+전체 선택
+0개 선택
+작업으로 보내기(+비식별화)
+선택 다운로드
+선택 삭제
+📁
+Anony
+
+[001][A3-01-01]20250709_135959(20250710173950)-01.16.51.313-01.17.22.313.MP4
+
+8.1 MB · 2026. 09. 17. 오전 01:25
+
+원본
+작업 ▾

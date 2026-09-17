@@ -55,14 +55,58 @@ class DatasetApiTests(unittest.TestCase):
         with patch('dataset_registry.Registry.create_branch',return_value={'ok':True,'node':{'id':'b'*32}}) as branch:
             status,result=self.request('/datasets/branch',{'dataset_type':'detector','parent_id':'a'*32,'version':'1.1.0','description':'branch'})
             self.assertEqual(status,201);self.assertTrue(result['ok']);branch.assert_called_once()
-        child={'id':'b'*32,'version':'1.1.0'}
-        with patch('dataset_registry.Registry.children',return_value=[child]),patch('dataset_registry.Registry.call') as call:
+        plan={
+            'selected_dataset_ids':['a'*32],
+            'selected':[{'id':'a'*32,'dataset_name':'Detector','version':'1.0.0'}],
+            'descendants':[{'id':'b'*32,'dataset_name':'Detector','version':'1.1.0'}],
+            'delete_order':[{'id':'b'*32,'dataset_name':'Detector','version':'1.1.0'},{'id':'a'*32,'dataset_name':'Detector','version':'1.0.0'}],
+            'requires_confirmation':True,
+        }
+        task={'task':{'id':'a'*32,'project':'p','system_tags':['dataset'],'name':'Detector'}}
+        project={'project':{'name':'Dataset'}}
+        with patch('dataset_registry.Registry.dataset_deletion_plan',return_value=plan),patch('dataset_registry.Registry.call',side_effect=[task,project]):
             status,result=self.request('/api/v2.13/tasks.delete',{'task':'a'*32})
-            self.assertEqual(status,409);self.assertIn('하위 Dataset',result['meta']['result_msg']);call.assert_not_called()
+            self.assertEqual(status,409);self.assertIn('하위 Dataset',result['meta']['result_msg'])
+            self.assertEqual([item['version'] for item in result['data']['delete_order']],['1.1.0','1.0.0'])
+    def test_confirmed_dataset_cascade_deletes_deepest_first(self):
+        a,b,c=('a'*32,'b'*32,'c'*32)
+        plan={
+            'selected_dataset_ids':[a],
+            'selected':[{'id':a,'dataset_name':'VLM','version':'1.2.0'}],
+            'descendants':[{'id':c,'dataset_name':'VLM','version':'1.4.0'},{'id':b,'dataset_name':'VLM','version':'1.3.0'}],
+            'delete_order':[{'id':c},{'id':b},{'id':a}],
+            'requires_confirmation':True,
+        }
+        task={'task':{'id':a,'project':'p','system_tags':['dataset'],'name':'VLM'}}
+        project={'project':{'name':'Dataset'}}
+        with patch('dataset_registry.Registry.dataset_deletion_plan',return_value=plan),patch('dataset_registry.Registry.call',side_effect=[task,project,{'deleted':True},{'deleted':True},{'deleted':True}]) as call:
+            status,result=self.request('/api/v2.13/tasks.delete',{'task':a},headers={'X-IVX-Dataset-Cascade':'confirmed'})
+        self.assertEqual(status,200)
+        delete_calls=[item.args[1]['task'] for item in call.call_args_list if item.args[0]=='tasks.delete']
+        self.assertEqual(delete_calls,[c,b,a])
+        self.assertEqual(result['data']['cascade_delete_order'],[c,b,a])
+
     def test_dataset_origin_and_active_job_guard(self):
         self.assertEqual(self.request('/datasets/prepare',{},origin='http://evil')[0],403)
         with patch.object(self.api.JOBS,'active',return_value=[{'id':'running'}]),patch('dataset_api.remote') as remote:
             self.assertEqual(self.request('/datasets/connect',{'dataset_type':'detector'})[0],409);remote.assert_not_called()
+
+class DatasetDeletionPlanTests(unittest.TestCase):
+    def test_recursive_child_first_plan_deduplicates_selected_parent_and_child(self):
+        registry=Registry('cookie')
+        a,b,c,d=('a'*32,'b'*32,'c'*32,'d'*32)
+        graph={'nodes':[
+            {'id':a,'name':'VLM','version':'1.0.0','parent_id':None},
+            {'id':b,'name':'VLM','version':'1.2.0','parent_id':a},
+            {'id':c,'name':'VLM','version':'1.3.0','parent_id':b},
+            {'id':d,'name':'VLM','version':'1.4.0','parent_id':c},
+        ]}
+        with patch.object(registry,'graph',side_effect=[{'nodes':[]},graph]):
+            plan=registry.dataset_deletion_plan([b,c,b])
+        self.assertTrue(plan['requires_confirmation'])
+        self.assertEqual([item['id'] for item in plan['delete_order']],[d,c,b])
+        self.assertEqual(len({item['id'] for item in plan['delete_order']}),3)
+
 
 class DatasetBranchTests(unittest.TestCase):
     def test_explicit_version_validation_and_duplicate(self):

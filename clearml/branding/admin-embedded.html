@@ -1,12 +1,1118 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
-:host{color-scheme:dark}*{box-sizing:border-box}main{min-height:100%;padding:26px 28px 36px;background:radial-gradient(circle at 35% 0,#122039 0,#091321 38%,#07101b 100%);font:14px Arial,sans-serif;color:#edf3ff}.top{display:flex;align-items:end;gap:24px;margin-bottom:22px}.title{min-width:360px}.title h1{font-size:30px;margin:0 0 8px}.muted{color:#91a6c1}.tabs{display:flex;margin-left:auto;border:1px solid #283a52;border-radius:7px;overflow:hidden}.tab{min-width:155px;padding:15px 30px;text-align:center;font-weight:700;background:#101b2b}.tab.on{background:linear-gradient(135deg,#315de8,#527ff5)}button,.btn,select,input{font:inherit}.actions{display:flex;gap:12px;margin-left:auto}.primary{border:0;border-radius:6px;background:linear-gradient(135deg,#315de8,#5381ff);color:#fff;padding:13px 24px;font-weight:700}.search{width:260px;border:1px solid #2a3d56;border-radius:6px;background:#111d2d;color:#dce8f8;padding:12px 16px}.layout{display:grid;grid-template-columns:minmax(620px,1.5fr) minmax(470px,1fr);gap:20px}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px}.stat,.card{border:1px solid #22344a;background:linear-gradient(145deg,#0d1928,#0a1421);border-radius:9px;box-shadow:0 12px 34px #0002}.stat{display:flex;align-items:center;gap:18px;padding:18px 22px}.ico{width:58px;height:58px;border-radius:9px;display:grid;place-items:center;font-size:28px;background:#1c356b}.ico.green{background:#174633}.ico.gray{background:#253044}.stat b{display:block;font-size:28px;margin-top:7px}.card{padding:18px}.card h2{font-size:21px;margin:0 0 6px}.cardhead{display:flex;align-items:center;gap:12px;margin-bottom:14px}.cardhead>div:first-child{flex:1}.filters{display:flex;gap:10px}.filter{background:#142238;color:#dce8f8;border:1px solid #2c405b;border-radius:6px;padding:10px 14px}.table{border:1px solid #263950;border-radius:7px;overflow:hidden}.row{display:grid;grid-template-columns:38px 1.65fr 1.15fr .75fr 58px 148px;align-items:center;min-height:58px;padding:0 12px;border-bottom:1px solid #203147}.row:last-child{border-bottom:0}.head{min-height:44px;background:#0b1725;color:#c5d5e9;font-weight:700}.person{display:flex;align-items:center;gap:11px}.avatar{width:38px;height:38px;border-radius:50%;background:#416da9;display:grid;place-items:center;font-weight:700;font-size:16px}.mail{display:block;color:#89a0bc;font-size:12px;margin-top:3px}.tags{display:flex;gap:5px;flex-wrap:wrap}.tag{padding:6px 9px;border-radius:14px;background:#243149;color:#bdcbe0;font-size:12px}.tag.gold{background:#4b3a21;color:#ffcb78}.status{display:inline-flex;align-items:center;gap:7px;border-radius:16px;padding:7px 11px;background:#124433;color:#62d9a9}.status.off{background:#263246;color:#a5b5cb}.dot{width:8px;height:8px;border-radius:50%;background:currentColor}.edit,.toggle{border:1px solid #315384;border-radius:5px;padding:8px 12px;color:#cfe2ff;background:#17365f}.toggle{background:#451f2a;border-color:#71303c;color:#ff9ea8}.toggle.on{background:#17365f;border-color:#315384;color:#b8d9ff}.pager{display:flex;align-items:center;justify-content:space-between;color:#9aadc5;padding-top:15px}.pages{word-spacing:18px}.right{display:flex;flex-direction:column;gap:18px}.permission-tabs{display:grid;grid-template-columns:1fr 1fr;margin:18px 0;border:1px solid #253953;border-radius:6px;overflow:hidden}.permission-tabs span{text-align:center;padding:12px;background:#0d1725}.permission-tabs .on{background:#182f68;color:#9fc0ff}.select{width:100%;background:#15253a;color:#dbe8f7;border:1px solid #2b4059;border-radius:6px;padding:12px;margin:8px 0 18px}.perm-head,.perm{display:grid;grid-template-columns:1.7fr repeat(4,.45fr);align-items:center;min-height:39px;border-bottom:1px solid #1d2d40}.perm-head{font-weight:700;color:#a9bad0}.perm input{width:18px;height:18px;accent-color:#4d83ff}.save{text-align:right;padding-top:18px}.history .hrow{display:grid;grid-template-columns:1fr .85fr 1.7fr .8fr;padding:9px 10px;border-bottom:1px solid #213249}.history .hrow.head{font-weight:700}.history .hrow:last-child{border:0}@media(max-width:1200px){.layout{grid-template-columns:1fr}.top{flex-wrap:wrap}.tabs{margin-left:0}.actions{margin-left:0}.row{grid-template-columns:35px 1.5fr 1fr .7fr 52px 130px}}
-</style></head><body><main><div class="top"><div class="title"><h1>계정 관리</h1><div class="muted">조직의 사용자와 그룹을 관리하고, 권한을 설정할 수 있습니다.</div></div><div class="tabs"><div class="tab on">♟　사용자</div><div class="tab">♟　그룹</div></div><div class="actions"><button class="primary">＋ 계정 생성</button><input class="search" placeholder="⌕  이름, 이메일로 검색"></div></div><div class="layout"><section><div class="summary"><div class="stat"><span class="ico">♟</span><div>전체 사용자<b>24</b></div></div><div class="stat"><span class="ico green">♟</span><div>활성 사용자<b>20</b></div></div><div class="stat"><span class="ico gray">♟</span><div>비활성 사용자<b>4</b></div></div></div><div class="card"><div class="cardhead"><div><h2>사용자 목록</h2><div class="muted">등록된 사용자를 확인하고 권한을 관리할 수 있습니다.</div></div><div class="filters"><select class="filter"><option>전체 상태</option></select><select class="filter"><option>최근 등록순</option></select></div></div><div class="table"><div class="row head"><span>□</span><span>이름 (이메일)</span><span>그룹</span><span>상태</span><span>권한 수</span><span>관리</span></div>
-<div class="row"><span>□</span><span class="person"><i class="avatar">김</i><span><b>김철수</b><small class="mail">chulsoo@intellivix.com</small></span></span><span class="tags"><i class="tag">데이터팀</i><i class="tag">프로젝트 A</i></span><span class="status"><i class="dot"></i>활성</span><b>8</b><span><button class="edit">수정</button> <button class="toggle">비활성화</button></span></div>
-<div class="row"><span>□</span><span class="person"><i class="avatar">이</i><span><b>이영희</b><small class="mail">younghee@intellivix.com</small></span></span><span class="tags"><i class="tag">라벨링팀</i></span><span class="status"><i class="dot"></i>활성</span><b>5</b><span><button class="edit">수정</button> <button class="toggle">비활성화</button></span></div>
-<div class="row"><span>□</span><span class="person"><i class="avatar">박</i><span><b>박지훈</b><small class="mail">jihoon@intellivix.com</small></span></span><span class="tags"><i class="tag">검수팀</i><i class="tag">프로젝트 B</i></span><span class="status off"><i class="dot"></i>비활성</span><b>3</b><span><button class="edit">수정</button> <button class="toggle on">활성화</button></span></div>
-<div class="row"><span>□</span><span class="person"><i class="avatar">김</i><span><b>김민지</b><small class="mail">minji@intellivix.com</small></span></span><span class="tags"><i class="tag">데이터팀</i></span><span class="status"><i class="dot"></i>활성</span><b>6</b><span><button class="edit">수정</button> <button class="toggle">비활성화</button></span></div>
-<div class="row"><span>□</span><span class="person"><i class="avatar">정</i><span><b>정우성</b><small class="mail">wooseok@intellivix.com</small></span></span><span class="tags"><i class="tag">라벨링팀</i><i class="tag">프로젝트 A</i></span><span class="status"><i class="dot"></i>활성</span><b>4</b><span><button class="edit">수정</button> <button class="toggle">비활성화</button></span></div>
-<div class="row"><span>□</span><span class="person"><i class="avatar">한</i><span><b>한지민</b><small class="mail">jimin@intellivix.com</small></span></span><span class="tags"><i class="tag">연구팀</i></span><span class="status"><i class="dot"></i>활성</span><b>7</b><span><button class="edit">수정</button> <button class="toggle">비활성화</button></span></div>
-<div class="row"><span>□</span><span class="person"><i class="avatar">오</i><span><b>오세훈</b><small class="mail">sehoon@intellivix.com</small></span></span><span class="tags"><i class="tag">운영팀</i></span><span class="status off"><i class="dot"></i>비활성</span><b>2</b><span><button class="edit">수정</button> <button class="toggle on">활성화</button></span></div>
-<div class="row"><span>□</span><span class="person"><i class="avatar">김</i><span><b>김다은</b><small class="mail">daeun@intellivix.com</small></span></span><span class="tags"><i class="tag">데이터팀</i><i class="tag gold">프로젝트 C</i></span><span class="status"><i class="dot"></i>활성</span><b>5</b><span><button class="edit">수정</button> <button class="toggle">비활성화</button></span></div></div><div class="pager"><span>총 24명 중 1-8명 표시</span><span class="pages">‹　<b>1</b>　2　3　›</span><span>페이지당 보기　<select class="filter"><option>8개</option></select></span></div></div></section><aside class="right"><div class="card"><h2>권한 설정</h2><div class="muted">개인 또는 그룹을 선택하여 기능별 권한을 설정할 수 있습니다.</div><div class="permission-tabs"><span class="on">♟　개인별 권한 설정</span><span>♟　그룹별 권한 설정</span></div><label>사용자 선택</label><select class="select"><option>사용자를 선택하세요.</option></select><div class="perm-head"><span>기능 권한</span><span>읽기</span><span>생성</span><span>수정</span><span>삭제</span></div>
-<div class="perm"><span>♟　사용자 관리</span><input checked type="checkbox"><input type="checkbox"><input type="checkbox"><input type="checkbox"></div><div class="perm"><span>▰　작업 공간 관리</span><input checked type="checkbox"><input checked type="checkbox"><input type="checkbox"><input type="checkbox"></div><div class="perm"><span>▣　데이터셋 관리</span><input checked type="checkbox"><input checked type="checkbox"><input checked type="checkbox"><input type="checkbox"></div><div class="perm"><span>▤　프로젝트 관리</span><input checked type="checkbox"><input checked type="checkbox"><input type="checkbox"><input type="checkbox"></div><div class="perm"><span>◆　라벨링 도구</span><input checked type="checkbox"><input checked type="checkbox"><input checked type="checkbox"><input type="checkbox"></div><div class="perm"><span>◉　모델 학습</span><input checked type="checkbox"><input checked type="checkbox"><input type="checkbox"><input type="checkbox"></div><div class="perm"><span>⚙　시스템 설정</span><input checked type="checkbox"><input type="checkbox"><input type="checkbox"><input type="checkbox"></div><div class="save"><button class="primary">변경사항 저장</button></div></div><div class="card history"><h2>◴　권한 변경 이력</h2><div class="muted">권한 변경 내역을 확인할 수 있습니다.</div><div class="table" style="margin-top:14px"><div class="hrow head"><span>일시</span><span>대상</span><span>변경 내용</span><span>변경자</span></div><div class="hrow"><span>2026-09-15 14:30</span><span>김민지</span><span>라벨링 도구 - 수정 권한 부여</span><span>김철수</span></div><div class="hrow"><span>2026-09-15 11:12</span><span>데이터팀</span><span>데이터셋 관리 - 생성 권한 부여</span><span>이영희</span></div><div class="hrow"><span>2026-09-14 16:20</span><span>정우성</span><span>프로젝트 관리 - 삭제 권한 제거</span><span>김철수</span></div></div></div></aside></div></main></body></html>
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+
+<style>
+:host {
+    color-scheme: dark;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+main {
+    min-height: 100%;
+    padding: 26px 28px 36px;
+
+    background:
+        radial-gradient(
+            circle at 35% 0,
+            #122039 0,
+            #091321 38%,
+            #07101b 100%
+        );
+
+    font: 14px Arial, sans-serif;
+    color: #edf3ff;
+}
+
+
+/* ============================================================
+   상단 영역
+   ============================================================ */
+
+.top {
+    display: grid;
+
+    /*
+        1열 : 제목
+        2열 : 사용자 / 그룹
+        3열 : 생성 버튼 + 검색
+    */
+    grid-template-columns:
+        minmax(360px, 1fr)
+        310px
+        392px;
+
+    align-items: end;
+    gap: 24px;
+
+    margin-bottom: 22px;
+}
+
+
+/* 제목 */
+
+.title {
+    min-width: 0;
+}
+
+.title h1 {
+    font-size: 30px;
+    margin: 0 0 8px;
+}
+
+.muted {
+    color: #91a6c1;
+}
+
+
+/* ============================================================
+   사용자 / 그룹 탭
+   ============================================================ */
+
+.tabs {
+    display: grid;
+
+    grid-template-columns:
+        155px
+        155px;
+
+    width: 310px;
+
+    border: 1px solid #283a52;
+    border-radius: 7px;
+
+    overflow: hidden;
+}
+
+.tab {
+    width: 155px;
+
+    padding: 15px 20px;
+
+    text-align: center;
+    font-weight: 700;
+
+    background: #101b2b;
+
+    cursor: pointer;
+
+    white-space: nowrap;
+
+    transition:
+        background 0.15s ease,
+        color 0.15s ease;
+}
+
+.tab.on {
+    background:
+        linear-gradient(
+            135deg,
+            #315de8,
+            #527ff5
+        );
+}
+
+
+/* ============================================================
+   상단 우측 액션
+   ============================================================ */
+
+button,
+.btn,
+select,
+input {
+    font: inherit;
+}
+
+.actions {
+    display: grid;
+
+    grid-template-columns:
+        120px
+        260px;
+
+    gap: 12px;
+
+    width: 392px;
+}
+
+
+/* 생성 버튼 */
+
+.primary {
+    width: 120px;
+
+    border: 0;
+    border-radius: 6px;
+
+    background:
+        linear-gradient(
+            135deg,
+            #315de8,
+            #5381ff
+        );
+
+    color: #fff;
+
+    padding: 13px 10px;
+
+    font-weight: 700;
+
+    cursor: pointer;
+
+    white-space: nowrap;
+}
+
+
+/* 위험 버튼 */
+
+.danger {
+    border: 1px solid #71303c;
+    border-radius: 6px;
+
+    background: #451f2a;
+
+    color: #ff9ea8;
+
+    padding: 13px 24px;
+
+    font-weight: 700;
+
+    cursor: pointer;
+}
+
+
+/* 검색창 */
+
+.search {
+    width: 260px;
+
+    border: 1px solid #2a3d56;
+    border-radius: 6px;
+
+    background: #111d2d;
+
+    color: #dce8f8;
+
+    padding: 12px 16px;
+}
+
+
+/* ============================================================
+   전체 레이아웃
+   ============================================================ */
+
+.layout {
+    display: grid;
+
+    grid-template-columns:
+        minmax(620px, 1.5fr)
+        minmax(470px, 1fr);
+
+    gap: 20px;
+}
+
+
+/* ============================================================
+   요약 카드
+   ============================================================ */
+
+.summary {
+    display: grid;
+
+    grid-template-columns:
+        repeat(3, 1fr);
+
+    gap: 14px;
+
+    margin-bottom: 18px;
+}
+
+.stat,
+.card {
+    border: 1px solid #22344a;
+
+    background:
+        linear-gradient(
+            145deg,
+            #0d1928,
+            #0a1421
+        );
+
+    border-radius: 9px;
+
+    box-shadow: 0 12px 34px #0002;
+}
+
+.stat {
+    display: flex;
+
+    align-items: center;
+
+    gap: 18px;
+
+    padding: 18px 22px;
+}
+
+
+/* 아이콘 */
+
+.ico {
+    width: 58px;
+    height: 58px;
+
+    border-radius: 9px;
+
+    display: grid;
+
+    place-items: center;
+
+    font-size: 28px;
+
+    background: #1c356b;
+}
+
+.ico.green {
+    background: #174633;
+}
+
+.ico.gray {
+    background: #253044;
+}
+
+.stat b {
+    display: block;
+
+    font-size: 28px;
+
+    margin-top: 7px;
+}
+
+
+/* ============================================================
+   카드
+   ============================================================ */
+
+.card {
+    padding: 18px;
+
+    margin-bottom: 18px;
+}
+
+.card:last-child {
+    margin-bottom: 0;
+}
+
+.card h2 {
+    font-size: 21px;
+
+    margin: 0 0 6px;
+}
+
+.cardhead {
+    display: flex;
+
+    align-items: center;
+
+    gap: 12px;
+
+    margin-bottom: 14px;
+}
+
+.cardhead > div:first-child {
+    flex: 1;
+}
+
+
+/* ============================================================
+   사용자 / 그룹 목록 테이블
+   ============================================================ */
+
+.table {
+    border: 1px solid #263950;
+
+    border-radius: 7px;
+
+    overflow: hidden;
+}
+
+.row {
+    display: grid;
+
+    grid-template-columns:
+        38px
+        1.5fr
+        1fr
+        .75fr
+        58px
+        210px;
+
+    align-items: center;
+
+    min-height: 58px;
+
+    padding: 0 12px;
+
+    border-bottom: 1px solid #203147;
+}
+
+.row:last-child {
+    border-bottom: 0;
+}
+
+.row.user-row {
+    grid-template-columns: minmax(210px,1.35fr) minmax(130px,.85fr) minmax(220px,1.35fr) 70px 210px;
+    gap: 12px;
+}
+.permission-count { text-align: center; }
+.status.compact {
+    display: inline-flex;
+    width: auto;
+    margin-left: 6px;
+    padding: 2px 7px;
+    gap: 4px;
+    font-size: 10px;
+    font-style: normal;
+    vertical-align: middle;
+}
+.status.compact .dot { width: 5px; height: 5px; }
+
+.head {
+    min-height: 44px;
+
+    background: #0b1725;
+
+    color: #c5d5e9;
+
+    font-weight: 700;
+}
+
+
+/* ============================================================
+   사용자
+   ============================================================ */
+
+.person {
+    display: flex;
+
+    align-items: center;
+
+    gap: 11px;
+
+    min-width: 0;
+}
+
+.avatar {
+    flex: none;
+
+    width: 38px;
+    height: 38px;
+
+    border-radius: 50%;
+
+    background: #416da9;
+
+    display: grid;
+
+    place-items: center;
+
+    font-weight: 700;
+    font-size: 16px;
+}
+
+.mail {
+    display: block;
+
+    color: #89a0bc;
+
+    font-size: 12px;
+
+    margin-top: 3px;
+}
+
+
+/* ============================================================
+   태그
+   ============================================================ */
+
+.tags {
+    display: flex;
+
+    gap: 5px;
+
+    flex-wrap: wrap;
+}
+
+.tag {
+    padding: 6px 9px;
+
+    border-radius: 14px;
+
+    background: #243149;
+
+    color: #bdcbe0;
+
+    font-size: 12px;
+}
+
+.tag.gold {
+    background: #4b3a21;
+
+    color: #ffcb78;
+}
+
+.tag.muted {
+    background: transparent;
+
+    color: #6d84a3;
+
+    padding: 0;
+}
+
+
+/* ============================================================
+   상태
+   ============================================================ */
+
+.status {
+    display: inline-flex;
+
+    align-items: center;
+
+    gap: 7px;
+
+    border-radius: 16px;
+
+    padding: 7px 11px;
+
+    background: #124433;
+
+    color: #62d9a9;
+}
+
+.status.off {
+    background: #263246;
+
+    color: #a5b5cb;
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+
+    border-radius: 50%;
+
+    background: currentColor;
+}
+
+
+/* ============================================================
+   행 액션
+   ============================================================ */
+
+.rowactions {
+    display: flex;
+
+    gap: 6px;
+
+    flex-wrap: wrap;
+}
+
+.edit,
+.toggle,
+.remove {
+    border: 1px solid #315384;
+
+    border-radius: 5px;
+
+    padding: 8px 10px;
+
+    color: #cfe2ff;
+
+    background: #17365f;
+
+    cursor: pointer;
+
+    font-size: 12px;
+}
+
+.toggle {
+    background: #451f2a;
+
+    border-color: #71303c;
+
+    color: #ff9ea8;
+}
+
+.toggle.on {
+    background: #17365f;
+
+    border-color: #315384;
+
+    color: #b8d9ff;
+}
+
+.remove {
+    background: #2a1218;
+
+    border-color: #5c232c;
+
+    color: #ff8c95;
+}
+
+
+/* ============================================================
+   오른쪽 영역
+   ============================================================ */
+
+.right {
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 18px;
+}
+
+
+/* ============================================================
+   개인 / 그룹 권한 탭
+   ============================================================ */
+
+.permission-tabs {
+    display: grid;
+
+    grid-template-columns:
+        1fr
+        1fr;
+
+    margin: 18px 0;
+
+    border: 1px solid #253953;
+
+    border-radius: 6px;
+
+    overflow: hidden;
+}
+
+.permission-tabs span {
+    text-align: center;
+
+    padding: 12px;
+
+    background: #0d1725;
+
+    cursor: pointer;
+}
+
+.permission-tabs .on {
+    background: #182f68;
+
+    color: #9fc0ff;
+}
+
+
+/* ============================================================
+   Select
+   ============================================================ */
+
+.select {
+    width: 100%;
+
+    background: #15253a;
+
+    color: #dbe8f7;
+
+    border: 1px solid #2b4059;
+
+    border-radius: 6px;
+
+    padding: 12px;
+
+    margin: 8px 0 18px;
+}
+
+
+/* ============================================================
+   권한 항목
+   ============================================================ */
+
+.perm-row {
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    padding: 11px 4px;
+
+    border-bottom: 1px solid #1d2d40;
+}
+
+.perm-row label {
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+
+    cursor: pointer;
+}
+
+.perm-row input {
+    width: 18px;
+    height: 18px;
+
+    accent-color: #4d83ff;
+}
+
+
+/* ============================================================
+   저장
+   ============================================================ */
+
+.save {
+    text-align: right;
+
+    padding-top: 18px;
+}
+
+
+/* ============================================================
+   권한 변경 이력
+   ============================================================ */
+
+.history .hrow {
+    display: grid;
+
+    grid-template-columns:
+        1.15fr
+        .65fr
+        .9fr
+        .8fr
+        1.3fr
+        .75fr;
+
+    padding: 9px 10px;
+
+    border-bottom: 1px solid #213249;
+
+    font-size: 13px;
+}
+
+.history .hrow.head {
+    font-weight: 700;
+}
+
+.history .hrow:last-child {
+    border: 0;
+}
+
+
+/* ============================================================
+   Empty
+   ============================================================ */
+
+.empty {
+    padding: 24px;
+
+    text-align: center;
+
+    color: #7d93b1;
+}
+
+
+/* ============================================================
+   반응형
+   ============================================================ */
+
+@media (max-width: 1400px) {
+
+    .top {
+        grid-template-columns:
+            minmax(300px, 1fr)
+            280px
+            352px;
+
+        gap: 16px;
+    }
+
+    .tabs {
+        width: 280px;
+
+        grid-template-columns:
+            140px
+            140px;
+    }
+
+    .tab {
+        width: 140px;
+    }
+
+    .actions {
+        width: 352px;
+
+        grid-template-columns:
+            110px
+            230px;
+    }
+
+    .primary {
+        width: 110px;
+    }
+
+    .search {
+        width: 230px;
+    }
+}
+
+
+@media (max-width: 1200px) {
+
+    .layout {
+        grid-template-columns: 1fr;
+    }
+
+    .top {
+        display: flex;
+
+        flex-wrap: wrap;
+
+        align-items: center;
+    }
+
+    .title {
+        flex: 1 1 100%;
+    }
+
+    .tabs {
+        flex: none;
+    }
+
+    .actions {
+        flex: none;
+
+        margin-left: auto;
+    }
+
+    .row {
+        grid-template-columns:
+            35px
+            1.3fr
+            1fr
+            .7fr
+            52px
+            190px;
+    }
+}
+
+
+@media (max-width: 760px) {
+
+    main {
+        padding: 20px 16px 30px;
+    }
+
+    .summary {
+        grid-template-columns: 1fr;
+    }
+
+    .tabs {
+        width: 100%;
+
+        grid-template-columns:
+            1fr
+            1fr;
+    }
+
+    .tab {
+        width: auto;
+    }
+
+    .actions {
+        width: 100%;
+
+        grid-template-columns:
+            120px
+            1fr;
+
+        margin-left: 0;
+    }
+
+    .search {
+        width: 100%;
+    }
+}
+</style>
+
+</head>
+
+<body>
+
+<main>
+
+    <!-- ======================================================
+         상단
+         ====================================================== -->
+
+    <div class="top">
+
+        <div class="title">
+            <h1>계정 관리</h1>
+
+            <div class="muted">
+                조직의 사용자와 그룹을 관리하고, 권한을 설정할 수 있습니다.
+            </div>
+        </div>
+
+
+        <!-- 사용자 / 그룹 -->
+
+        <div class="tabs">
+
+            <div
+                class="tab on"
+                id="ivx-tab-users"
+            >
+                ♟　사용자
+            </div>
+
+            <div
+                class="tab"
+                id="ivx-tab-groups"
+            >
+                ♟　그룹
+            </div>
+
+        </div>
+
+
+        <!-- 생성 / 검색 -->
+
+        <div class="actions">
+
+            <button
+                class="primary"
+                id="ivx-create"
+            >
+                ＋ 계정 생성
+            </button>
+
+            <input
+                class="search"
+                id="ivx-search"
+                placeholder="⌕  이름, 아이디로 검색"
+            >
+
+        </div>
+
+    </div>
+
+
+    <!-- ======================================================
+         Main Layout
+         ====================================================== -->
+
+    <div class="layout">
+
+
+        <!-- ==================================================
+             왼쪽
+             ================================================== -->
+
+        <section>
+
+
+            <!-- 요약 -->
+
+            <div class="summary">
+
+                <div class="stat">
+
+                    <span class="ico">
+                        ♟
+                    </span>
+
+                    <div id="ivx-stat-1-label">
+                        전체 사용자
+
+                        <b id="ivx-stat-1">
+                            -
+                        </b>
+                    </div>
+
+                </div>
+
+
+                <div class="stat">
+
+                    <span class="ico green">
+                        ♟
+                    </span>
+
+                    <div id="ivx-stat-2-label">
+                        활성 사용자
+
+                        <b id="ivx-stat-2">
+                            -
+                        </b>
+                    </div>
+
+                </div>
+
+
+                <div class="stat">
+
+                    <span class="ico gray">
+                        ♟
+                    </span>
+
+                    <div id="ivx-stat-3-label">
+                        비활성 사용자
+
+                        <b id="ivx-stat-3">
+                            -
+                        </b>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- 사용자 / 그룹 목록 -->
+
+            <div class="card">
+
+                <div class="cardhead">
+
+                    <div>
+
+                        <h2 id="ivx-list-title">
+                            사용자 목록
+                        </h2>
+
+                        <div
+                            class="muted"
+                            id="ivx-list-sub"
+                        >
+                            등록된 사용자를 확인하고 권한을 관리할 수 있습니다.
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div
+                    class="table"
+                    id="ivx-table"
+                >
+
+                    <div class="row head">
+
+                        <span></span>
+
+                        <span>
+                            불러오는 중…
+                        </span>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- ==================================================
+             오른쪽
+             ================================================== -->
+
+        <aside class="right">
+
+
+            <!-- 권한 설정 -->
+
+            <div
+                class="card"
+                id="ivx-perm-card"
+            >
+
+                <div class="muted">
+                    불러오는 중…
+                </div>
+
+            </div>
+
+
+            <!-- 권한 변경 이력 -->
+
+            <div
+                class="card history"
+                id="ivx-history-card"
+            >
+
+                <h2>
+                    ◴　권한 변경 이력
+                </h2>
+
+                <div class="muted">
+                    계정·그룹 권한 변경 내역을 확인할 수 있습니다.
+                </div>
+
+
+                <div
+                    class="table"
+                    id="ivx-history-table"
+                    style="margin-top:14px"
+                >
+
+                    <div class="hrow head">
+
+                        <span>
+                            일시
+                        </span>
+
+                        <span>
+                            대상
+                        </span>
+
+                        <span>
+                            변경 내용
+                        </span>
+
+                        <span>
+                            변경자
+                        </span>
+
+                    </div>
+
+
+                    <div class="hrow">
+
+                        <span
+                            class="muted"
+                            style="grid-column:1/-1"
+                        >
+                            불러오는 중…
+                        </span>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </aside>
+
+    </div>
+
+</main>
+
+</body>
+</html>

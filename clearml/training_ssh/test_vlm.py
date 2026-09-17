@@ -53,6 +53,8 @@ class VlmTests(unittest.TestCase):
         with patch('vlm.resources',return_value=CATALOG),patch('detector.ssh_command',return_value=['ssh']),patch.object(jobs,'remote_running',return_value=False),patch('detector.threading.Thread'):
             j=jobs.start({'type':'vlm','gpu':'0','train_json':'/workspace/VLM/data/vlm/image/20260914/train.json','val_json':'/workspace/VLM/data/vlm/image/20260914/valid.json','ui_settings':{'vlm_mode':'lora'}})
         self.assertEqual(j['params']['type'],'vlm')
+        self.assertRegex(j['params']['name'], r'^vlm_[0-9]{14}$')
+        self.assertIn('--name ' + j['params']['name'], j['command'])
         self.assertEqual(j['effective']['gradient_accumulation'],4)
         with self.assertLogs('detector'):jobs.append(j['id'],'stdout','ClearML URL: http://server/projects/abc/experiments/'+'a'*32+'/output/log\n')
         self.assertEqual(jobs.get(j['id'])['clearml_task_id'],'a'*32)

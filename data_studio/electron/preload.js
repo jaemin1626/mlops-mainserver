@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electron', {
   getMediaBaseRoot: () => ipcRenderer.invoke('getMediaBaseRoot'),
   scanFolder: (path) => ipcRenderer.invoke('scanFolder', path),
   scanYoloDashboard: (detectorRoot) => ipcRenderer.invoke('scanYoloDashboard', detectorRoot),
+  scanVlmDashboard: (vlmRoot) => ipcRenderer.invoke('scanVlmDashboard', vlmRoot),
   scanMediaFolder: (path) => ipcRenderer.invoke('scanMediaFolder', path),
   readTxt: (path) => ipcRenderer.invoke('readTxt', path),
   writeTxt: (path, content) => ipcRenderer.invoke('writeTxt', path, content),

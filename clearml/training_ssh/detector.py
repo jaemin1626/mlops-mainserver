@@ -1,4 +1,5 @@
 """Validated Detector launch contract and bounded, asynchronous job tracking."""
+import datetime
 import logging
 import os
 import re
@@ -7,10 +8,10 @@ import subprocess
 import threading
 import uuid
 from pathlib import PurePosixPath
-from client import command, ssh_command
+from client import command, ssh_command, TRAINING_ROOT
 
-SCRIPT = '/home/intellivix/train/scripts/train.sh'
-BASE = PurePosixPath('/home/intellivix/train/Detector')
+SCRIPT = TRAINING_ROOT + '/scripts/train.sh'
+BASE = PurePosixPath(TRAINING_ROOT) / 'Detector'
 OPTIONS = {'type': '--type', 'data': '--data', 'epochs': '--epochs',
            'batch': '--batch', 'gpu': '--gpu', 'img_size': '--img-size',
            'weights': '--weights', 'name': '--name', 'resume': '--resume'}
@@ -77,6 +78,15 @@ class Jobs:
         if not isinstance(params, dict):
             raise ValueError('Training request must be an object')
         params = dict(params)
+        if not params.get('name'):
+            if params.get('type') == 'vlm':
+                modality = str(params.get('modality') or 'both').lower()
+                prefix = {'image': 'Image', 'video': 'Video', 'both': 'Both'}.get(modality)
+                if not prefix:
+                    raise ValueError('지원하지 않는 VLM 학습 대상입니다.')
+            else:
+                prefix = 'detector'
+            params['name'] = f"{prefix}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
         ui_settings = params.pop('ui_settings', None)
         if ui_settings is not None and not isinstance(ui_settings, dict):
             raise ValueError('ui_settings must be an object')
@@ -92,7 +102,7 @@ class Jobs:
             launch_command = remote_command(params)
         if dataset_metadata:
             import json
-            launch_command='python3 /home/intellivix/train/scripts/mlops_dataset_train.py --metadata '+shlex.quote(json.dumps(dataset_metadata,ensure_ascii=False))+' -- '+launch_command
+            launch_command='python3 '+TRAINING_ROOT+'/scripts/mlops_dataset_train.py --metadata '+shlex.quote(json.dumps(dataset_metadata,ensure_ascii=False))+' -- '+launch_command
         command = ssh_command(launch_command)
         with self.lock:
             if any(j['status'] in {'queued', 'running', 'stopping'} for j in self.jobs.values()):
@@ -213,7 +223,7 @@ class Jobs:
         try:
             task_id=None
             if project=='vlm' and self.remote_running(project):
-                snapshot=subprocess.run(ssh_command('cat /home/intellivix/train/VLM/.cache/current_clearml_task_id'),capture_output=True,text=True,timeout=15,env=self.child_env())
+                snapshot=subprocess.run(ssh_command('cat '+TRAINING_ROOT+'/VLM/.cache/current_clearml_task_id'),capture_output=True,text=True,timeout=15,env=self.child_env())
                 candidate=snapshot.stdout.strip()
                 if snapshot.returncode==0 and re.fullmatch(r'[a-f0-9]{32}',candidate):task_id=candidate
             stop_command = command(['stop', project])

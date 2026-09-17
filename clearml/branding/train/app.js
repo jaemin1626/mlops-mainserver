@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const form=document.querySelector('#train-form'), missing={textContent:'',hidden:false,disabled:false,setAttribute(){},removeAttribute(){},value:0}, $=s=>document.querySelector(s)||missing, fields=form.elements;
-let model='detector',tab='yaml',ready=false,busy=false,jobTimer,checking=false,activeJobId=null;
+let model='detector',tab='yaml',ready=false,busy=false,jobTimer,checking=false,activeJobId=null,pendingResetCheck=true;
 const selectedDatasets=[], detectorFolders=[]; let detectorBrowsePath='', modalFolderPath='', modalFolderMode='detector';
 const vlmFolders=[];let vlmDataset=null,preparingVlm=false;
 let vlmCatalog=null,vlmPrepared=null,vlmFingerprint='',vlmPreviewGeneration=0;
@@ -11,6 +11,11 @@ const vlmLabels={"modality": "학습 대상", "mode": "학습 방식", "model": 
 let preparedDataset=null, preparingDataset=false;
 const trees={};
 const drafts={}, API='/training-api', DATASET_ROOT='/opt/clearml/data/datasets/detector', RUN_ROOT='/home/intellivix/train/Detector/runs/Detector/';
+function setStatus(selector,message,state='info'){const el=$(selector);el.textContent=message;el.dataset.state=state;}
+function setLaunchGuidance(message,state='info'){setStatus('#launch-guidance',message,state);}
+function setVlmAnnotationStatus(message,state='error'){setStatus('#vlm-annotation-status',message,state);}
+function setDetectorAnnotationStatus(message,state='error'){setStatus('#detector-annotation-status',message,state);}
+function setLaunchPreparing(active,message=''){const button=$('#launch');button.dataset.preparing=String(active);button.textContent=active?'⏳ 학습 준비 중…':'▶ 학습 시작';button.disabled=active||busy;const warning=/먼저|실패|필요|확인해|annotation/.test(message);setLaunchGuidance(message,active?'info':warning?'error':'info');}
 function payload(){
  if(model==='detector'){
   const v={type:'detector'};
@@ -40,6 +45,7 @@ function preview(){
   const savedTree=drafts.detector?.dataset_tree;drafts.detector=Object.fromEntries(new FormData(form));if(savedTree)drafts.detector.dataset_tree=savedTree;drafts.detector.detector_resume=fields.detector_resume.checked;
   drafts.detector.dataset_folders=[...detectorFolders];drafts.detector.prepared_dataset=preparedDataset;
   syncDetectorDataset();
+  if(detectorDatasetDirty()||!preparedDataset)setLaunchGuidance('먼저 「annotation 자동 생성」 또는 「클래스 적용 · data.yaml 저장」 버튼을 눌러주세요.','error');else setLaunchGuidance('','info');
   try{sessionStorage.setItem('ivx-training-drafts-v1',JSON.stringify(drafts));}catch(_){}
   return;
  }
@@ -49,7 +55,7 @@ function preview(){
  const savedTree=drafts.vlm?.dataset_tree;const savedGpu=drafts.vlm?.vlm_gpu;drafts.vlm={};if(savedTree)drafts.vlm.dataset_tree=savedTree;if(savedGpu!==undefined)drafts.vlm.vlm_gpu=savedGpu;vlmKeys.forEach(key=>{const field=fields['vlm_'+key];if(field)drafts.vlm['vlm_'+key]=field.value;});
  if(vlmCatalog)drafts.vlm.vlm_gpu=current.gpu||'';
  drafts.vlm.dataset_folders=[...vlmFolders];drafts.vlm.prepared_dataset=vlmDataset;renderVlmFolders();
- if(JSON.stringify(current)!==vlmFingerprint){vlmPrepared=null;$('#vlm-preview-status').textContent='설정 확인 후 학습을 시작하세요.';$('#vlm-effective').replaceChildren();}
+ if(JSON.stringify(current)!==vlmFingerprint){vlmPrepared=null;vlmDataset&&vlmDataset.signature===vlmDatasetSignature()?setLaunchGuidance('학습 시작 시 설정을 자동으로 확인합니다.','info'):setLaunchGuidance('먼저 「train.json · valid.json 생성」 버튼을 눌러주세요.','error');}
  $('#launch').disabled=busy;
  updateVlmBatch();
  try{sessionStorage.setItem('ivx-training-drafts-v1',JSON.stringify(drafts));}catch(_){}
@@ -117,6 +123,33 @@ function restoreJobSettings(j){
  if(j.ui_settings){drafts.detector=j.ui_settings;trees.detector?.restore(j.ui_settings.dataset_tree);Object.entries(j.ui_settings).forEach(([k,v])=>{if(fields[k]){if(fields[k].type==='checkbox')fields[k].checked=Boolean(v);else fields[k].value=v;}});preparedDataset=j.ui_settings.prepared_dataset||preparedDataset;}
  renderDetectorFolders();
 }
+async function resetTrainingForm(){
+ sessionStorage.removeItem('ivx-active-job-id');sessionStorage.removeItem('ivx-training-drafts-v1');
+ Object.keys(drafts).forEach(k=>delete drafts[k]);
+ activeJobId=null;detectorFolders.length=0;vlmFolders.length=0;
+ vlmDataset=null;vlmPrepared=null;vlmFingerprint='';preparedDataset=null;
+ form.reset();
+ Object.values(trees).forEach(tree=>{
+  tree.state={selected_files:[],selected_folders:[],source_node:null,source_id:null,new_version:false,version_group:'',branch:'',update_mode:'append',version_name:'',branch_name:''};
+  tree.expanded=new Set(['.']);tree.prepared=null;tree.catalog=null;
+ });
+ renderDetectorFolders();renderVlmFolders();
+ setDetectorAnnotationStatus('','info');setVlmAnnotationStatus('','info');
+ $('#detector-generated-files').textContent='';$('#detector-generated-files').hidden=true;
+ $('#vlm-generated-files').textContent='';$('#vlm-generated-files').hidden=true;
+ $('#job-state').textContent='대기';$('#job-id').textContent='실행된 학습 없음';
+ $('#logs').textContent='학습 시작 후 서버 로그가 여기에 표시됩니다.';$('#clearml-link').hidden=true;
+ $('#launch').dataset.preparing='false';$('#launch').textContent='▶ 학습 시작';setLaunchGuidance('','info');
+ preview();
+ const activeTree=trees[model];
+ if(activeTree){
+  await activeTree.load(true);
+  // load() can auto-select folders left over in detectorFolders/vlmFolders from a stale
+  // draft that was still being restored elsewhere; force it empty no matter what happened.
+  activeTree.state.selected_files=[];activeTree.state.selected_folders=[];
+  activeTree.render();activeTree.save();
+ }
+}
 async function restoreActiveJob(force=false){
  if(stopping&&!force)return;
  const generation=++statusGeneration;clearTimeout(jobTimer);
@@ -125,6 +158,10 @@ async function restoreActiveJob(force=false){
   const j=(r.jobs&&r.jobs[0])||(savedId?await request('/jobs/'+encodeURIComponent(savedId)).catch(()=>null):null);
   if(generation!==statusGeneration)return;
   busy=!!(r.remote_running||j&&['queued','running','stopping'].includes(j.status));
+  if(pendingResetCheck){
+   pendingResetCheck=false;
+   if(!busy){resetTrainingForm();return;}
+  }
   activeJobId=busy&&j?j.id:null;
   if(busy&&j){restoreJobSettings(j);busy=true;sessionStorage.setItem('ivx-active-job-id',String(j.id));}
   if(!busy&&!j)sessionStorage.removeItem('ivx-active-job-id');
@@ -132,7 +169,7 @@ async function restoreActiveJob(force=false){
   if(j){$('#job-id').textContent=String(j.id);$('#logs').textContent=j.logs||'로그 대기 중';}
   else if(busy){if(r.remote_types?.[0]&&r.remote_types[0]!==model){busy=false;choose(r.remote_types[0]);busy=true;}$('#logs').textContent='학습 서버에서 '+model.toUpperCase()+' 학습이 실행 중입니다.';}
   if(j?.clearml_task_id){const link=$('#clearml-link');link.hidden=false;link.href=j.clearml_path||String(j.logs||'').match(/(\/projects\/[a-f0-9]{32}\/(?:tasks|experiments)\/[a-f0-9]{32}\/output\/log)/i)?.[1]||'/projects/*/tasks/'+encodeURIComponent(j.clearml_task_id)+'/output/log';}else{$('#clearml-link').hidden=true;}
-  setTrainingLock(busy);
+  setTrainingLock(busy);if(busy){$('#launch').textContent=j?.status==='queued'?'⏳ 학습 준비 중…':'▶ 학습 실행 중';}else if($('#launch').dataset.preparing!=='true'){const doneGuidance={completed:['학습이 완료되었습니다.','success'],failed:['학습이 실패했습니다.','error'],stopped:['학습이 종료되었습니다.','info']}[j?.status];setLaunchPreparing(false,$('#launch-guidance').textContent);if(doneGuidance)setLaunchGuidance(doneGuidance[0],doneGuidance[1]);}
  }catch(e){if(generation===statusGeneration)$('#connection').textContent='학습 상태 확인 실패: '+e.message;}
  finally{if(generation===statusGeneration&&!stopping)jobTimer=setTimeout(restoreActiveJob,5000);}
 }
@@ -144,7 +181,7 @@ function syncDetectorDataset(){
  if(model==="detector")$("#launch").disabled=busy||preparingDataset||dirty;
  fields.data.readOnly=detectorFolders.length>0;
  $('#detector-class-map').textContent=detectorClasses().map((name,id)=>id+': '+name).join(' · ');
- if(dirty&&!preparingDataset&&!$('#detector-annotation-status').textContent.startsWith('실패:'))$('#detector-annotation-status').textContent='선택한 폴더와 클래스를 적용하려면 annotation 생성 또는 클래스 적용을 눌러주세요.';
+ if(dirty&&!preparingDataset&&!$('#detector-annotation-status').textContent.includes('실패'))setDetectorAnnotationStatus('선택한 폴더와 클래스를 적용하려면 annotation 자동 생성 또는 클래스 적용을 눌러주세요.','error');
  $('#detector-generated-files').hidden=!preparedDataset||dirty;
  if(preparedDataset&&!dirty)$('#detector-generated-files').textContent=Object.values(preparedDataset.files||{}).join('\n');
 }
@@ -169,7 +206,7 @@ async function loadDetectorFolders(refresh=true){
   $('#detector-up-folder').disabled=!detectorBrowsePath;
   if(!fields.detector_classes.value&&Array.isArray(data.classes))fields.detector_classes.value=data.classes.join('\n');
   preview();
- }catch(err){$('#detector-annotation-status').textContent='폴더 조회 실패: '+err.message;}
+ }catch(err){setDetectorAnnotationStatus('폴더 조회 실패: '+err.message,'error');}
  finally{button.disabled=busy;}
 }
 async function loadFolderModal(path,mode=modalFolderMode){
@@ -205,25 +242,25 @@ $('#detector-selected-datasets').onclick=e=>{
 async function prepareDetectorDataset(){
  if(trees.detector){
   if(busy||preparingDataset||preparingVlm)return;preparingDataset=true;$('#launch').disabled=true;
-  try{const result=await trees.detector.prepare();if(result){fields.data.value=result.data;preparedDataset={data:result.data,yaml:result.yaml,files:result.files,signature:detectorSignature()};$('#detector-annotation-status').textContent='✓ 학습 파일 생성 완료 · train '+result.train+' / valid '+result.valid+' / test '+result.test;}}
-  catch(e){$('#detector-annotation-status').textContent='실패: '+e.message;}finally{preparingDataset=false;preview();setTrainingLock(busy);}return;
+  try{const result=await trees.detector.prepare();if(result){fields.data.value=result.data;preparedDataset={data:result.data,yaml:result.yaml,files:result.files,signature:detectorSignature()};setDetectorAnnotationStatus('✓ 학습 파일 생성 완료 · train '+result.train+' / valid '+result.valid+' / test '+result.test,'success');}}
+  catch(e){setDetectorAnnotationStatus('실패: '+e.message,'error');}finally{preparingDataset=false;preview();setTrainingLock(busy);}return;
  }
  if(preparingDataset||busy||model!=='detector')return;
- if(!detectorFolders.length){$('#detector-annotation-status').textContent='학습할 폴더를 ＋로 추가하세요.';return;}
+ if(!detectorFolders.length){setDetectorAnnotationStatus('학습할 폴더를 ＋로 추가하세요.','error');return;}
  const classes=detectorClasses();
- if(!classes.length||new Set(classes).size!==classes.length){$('#detector-annotation-status').textContent='중복 없이 클래스를 입력하세요.';return;}
+ if(!classes.length||new Set(classes).size!==classes.length){setDetectorAnnotationStatus('클래스 수와 입력값을 확인하세요. 중복 없이 클래스를 입력해야 합니다.','error');return;}
  const signature=detectorSignature(),params={folders:[...detectorFolders],classes};
  preparingDataset=true;syncDetectorDataset();
  const controls=[...document.querySelectorAll('#dataset input, #dataset textarea, #dataset select, #dataset button, [data-model]')];
  controls.forEach(el=>el.disabled=true);
- $('#detector-annotation-status').textContent='선택 데이터 검증 및 annotation·data.yaml 생성 중…';
+ setDetectorAnnotationStatus('선택 데이터 검증 및 annotation·data.yaml 생성 중…','info');
  try{
   const result=await request('/detector/annotations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(params)});
   if(!result.data||!result.yaml||!result.files)throw Error('생성 결과가 올바르지 않습니다.');
   if(signature!==detectorSignature())throw Error('설정이 변경되었습니다. 다시 적용하세요.');
   fields.data.value=result.data;preparedDataset={data:result.data,yaml:result.yaml,files:result.files,signature};
-  $('#detector-annotation-status').textContent='✓ data.yaml 반영 완료 · 학습 '+result.train+'개 / 검증·테스트 '+result.test+'개'+(result.missing_labels?' · 라벨 없는 이미지 '+result.missing_labels+'개는 배경으로 사용':'');
- }catch(err){$('#detector-annotation-status').textContent='실패: '+err.message;}
+  setDetectorAnnotationStatus('✓ data.yaml 반영 완료 · 학습 '+result.train+'개 / 검증·테스트 '+result.test+'개'+(result.missing_labels?' · 라벨 없는 이미지 '+result.missing_labels+'개는 배경으로 사용':''),'success');
+ }catch(err){setDetectorAnnotationStatus('학습 준비 실패: '+err.message,'error');}
  finally{preparingDataset=false;controls.forEach(el=>el.disabled=false);preview();}
 }
 $('#detector-generate-annotations').onclick=prepareDetectorDataset;
@@ -235,22 +272,22 @@ function renderVlmFolders(){
  const box=$('#vlm-selected-datasets');box.replaceChildren();
  vlmFolders.forEach((path,index)=>{const chip=document.createElement('span'),label=document.createElement('span'),button=document.createElement('button');chip.className='dataset-chip';label.textContent=path;button.type='button';button.dataset.index=index;button.textContent='×';button.disabled=busy||preparingVlm;button.setAttribute('aria-label',path+' 제거');chip.append(label,button);box.appendChild(chip);});
  const valid=vlmDataset&&vlmDataset.signature===vlmDatasetSignature();$('#vlm-generated-files').hidden=!valid;
- if(valid){$('#vlm-generated-files').textContent=vlmDataset.train_json+'\n'+vlmDataset.val_json;$('#vlm-annotation-status').textContent='✓ 생성 완료 · 학습 '+vlmDataset.train+'개 / 검증 '+vlmDataset.valid+'개';}
- else if(!preparingVlm)$('#vlm-annotation-status').textContent='폴더와 학습 대상을 선택한 뒤 JSON을 생성하세요.';
+ if(valid){$('#vlm-generated-files').textContent=vlmDataset.train_json+'\n'+vlmDataset.val_json;setVlmAnnotationStatus('✓ 생성 완료 · 학습 '+vlmDataset.train+'개 / 검증 '+vlmDataset.valid+'개','success');if(model==='vlm')setLaunchGuidance('','info');}
+ else if(!preparingVlm){setVlmAnnotationStatus('폴더와 학습 대상을 선택한 뒤 JSON을 생성하세요.','error');if(model==='vlm')setLaunchGuidance('먼저 「train.json · valid.json 생성」 버튼을 눌러주세요.','error');}
 }
 $('#vlm-add-dataset').onclick=()=>{if(busy||preparingVlm)return;const select=$('#vlm-folder-select');if(select.value&&!vlmFolders.includes(select.value))vlmFolders.push(select.value);select.value='';preview();};
 $('#vlm-selected-datasets').onclick=e=>{if(busy||preparingVlm)return;const button=e.target.closest('button[data-index]');if(button){vlmFolders.splice(Number(button.dataset.index),1);preview();}};
 $('#vlm-generate-annotations').onclick=async()=>{
  if(trees.vlm){if(busy||preparingVlm||preparingDataset)return;preparingVlm=true;
-  try{const result=await trees.vlm.prepare();if(result){vlmDataset={train_json:result.train_json,val_json:result.val_json,train:result.train,valid:result.valid,files:result.files,signature:vlmDatasetSignature()};vlmPrepared=null;preview();}}catch(e){$('#vlm-annotation-status').textContent='생성 실패: '+e.message;}finally{preparingVlm=false;setTrainingLock(busy);}return;
+  try{const result=await trees.vlm.prepare();if(result){vlmDataset={train_json:result.train_json,val_json:result.val_json,train:result.train,valid:result.valid,files:result.files,signature:vlmDatasetSignature()};vlmPrepared=null;preview();}}catch(e){setVlmAnnotationStatus('생성 실패: '+e.message,'error');}finally{preparingVlm=false;setTrainingLock(busy);}return;
  }
  if(busy||preparingVlm||model!=='vlm')return;
- if(!vlmFolders.length){$('#vlm-annotation-status').textContent='학습할 폴더를 ＋로 추가하세요.';return;}
+ if(!vlmFolders.length){setVlmAnnotationStatus('학습할 폴더를 ＋로 추가하세요.','error');return;}
  const signature=vlmDatasetSignature();preparingVlm=true;vlmPrepared=null;setTrainingLock(true);$('#stop').disabled=true;$('#running-link').hidden=true;
- $('#vlm-annotation-status').textContent='라벨 검증 및 9:1 무작위 분할 중…';let error='';
+ setVlmAnnotationStatus('라벨 검증 및 9:1 무작위 분할 중…','info');let error='';
  try{const result=await request('/vlm/annotations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({folders:[...vlmFolders],modality:fields.vlm_modality.value})});if(!result.train_json||!result.val_json)throw Error('JSON 생성 결과가 올바르지 않습니다.');if(signature!==vlmDatasetSignature())throw Error('설정이 변경되었습니다. 다시 생성하세요.');vlmDataset={...result,signature};}
  catch(e){error='생성 실패: '+e.message;}
- finally{preparingVlm=false;setTrainingLock(busy);preview();if(error)$('#vlm-annotation-status').textContent=error;}
+ finally{preparingVlm=false;setTrainingLock(busy);preview();if(error)setVlmAnnotationStatus(error,'error');}
 };
 
 function syncVlmSections(){
@@ -301,25 +338,19 @@ async function loadVlmResources(){
  finally{button.disabled=busy||model!=='vlm';if(trees.vlm&&!trees.vlm.catalog)await trees.vlm.load();}
 }
 async function verifyVlm(){
- if(busy||preparingVlm||model!=='vlm')return;if(!vlmDataset||vlmDataset.signature!==vlmDatasetSignature()){$('#vlm-preview-status').textContent='폴더를 선택하고 train.json · valid.json을 생성하세요.';return;}validateVlmFields();if(!form.reportValidity())return;
+ if(busy||preparingVlm||model!=='vlm')return;if(!vlmDataset||vlmDataset.signature!==vlmDatasetSignature()){setLaunchGuidance('먼저 「train.json · valid.json 생성」 버튼을 눌러주세요.','error');return;}validateVlmFields();if(!form.reportValidity())return;
  const button=$('#vlm-verify'),generation=++vlmPreviewGeneration;button.disabled=true;$('#launch').disabled=true;
  const params=payload(),fingerprint=JSON.stringify(params);$('#vlm-preview-status').textContent='서버 설정 및 데이터 접근 확인 중…';
  try{
   const result=await request('/vlm/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(params)});
   if(generation!==vlmPreviewGeneration||model!=='vlm'||JSON.stringify(payload())!==fingerprint)return;
   vlmPrepared=result;vlmFingerprint=fingerprint;
-  const box=$('#vlm-effective');box.replaceChildren();const table=document.createElement('table');table.className='effective-table';
-  const header=document.createElement('tr');['설정','최종 적용값','출처'].forEach(text=>{const th=document.createElement('th');th.textContent=text;header.appendChild(th);});table.appendChild(header);
-  Object.entries(result.effective).filter(([key])=>!['model','validation_ratio','validation_seed'].includes(key)).forEach(([key,value])=>{const row=document.createElement('tr');[vlmLabels[key]||key,value===null?(key==='train_json'||key==='val_json'?(result.automatic[key].join(', ')||(key==='val_json'?'자동 분할':'탐색 결과 없음')):'자동 / 제한 없음'):String(value),result.sources[key]].forEach(text=>{const cell=document.createElement('td');cell.textContent=text;row.appendChild(cell);});table.appendChild(row);});box.appendChild(table);
-  result.warnings.forEach(text=>{const p=document.createElement('p');p.className='hint';p.textContent=text;box.appendChild(p);});
   $('#config-preview').textContent=JSON.stringify({request:result.params,command:result.command},null,2);
-  $('#vlm-preview-status').textContent='✓ 설정 확인 완료 · 유효 배치 '+result.effective_batch+' · 학습 시작 가능';$('#launch').disabled=false;
- }catch(e){vlmPrepared=null;$('#vlm-preview-status').textContent='설정 확인 실패: '+e.message;$('#launch').disabled=false;}
+  setLaunchGuidance('학습 설정과 데이터 접근 확인이 완료되었습니다.','success');if($('#launch').dataset.preparing!=='true')$('#launch').disabled=false;
+ }catch(e){vlmPrepared=null;setLaunchGuidance('학습 준비 실패: '+e.message,'error');if($('#launch').dataset.preparing!=='true')$('#launch').disabled=false;}
  finally{button.disabled=busy;}
 }
-function toggleVlmFinalSettings(){const section=$('#vlm-final-settings'),body=[...section.children].slice(1),collapsed=section.dataset.collapsed==='true';section.dataset.collapsed=String(!collapsed);body.forEach(el=>el.hidden=!collapsed);$('#vlm-verify').setAttribute('aria-expanded',String(collapsed));}
-const verifyVlmOriginal=verifyVlm; verifyVlm=async()=>{const section=$('#vlm-final-settings');if(vlmPrepared){toggleVlmFinalSettings();return;}await verifyVlmOriginal();};
-$('#vlm-verify').onclick=()=>verifyVlm();
+const verifyControl=document.querySelector('#vlm-verify');if(verifyControl)verifyControl.onclick=()=>verifyVlm();
 function selectTab(t){tab=t;$('#yaml-tab').setAttribute('aria-selected',String(t==='yaml'));$('#request-tab').setAttribute('aria-selected',String(t==='request'));preview();}
 $('#yaml-tab').onclick=()=>selectTab('yaml');$('#request-tab').onclick=()=>selectTab('request');
 $('#download').onclick=()=>{if(!form.reportValidity())return;const url=URL.createObjectURL(new Blob([JSON.stringify(payload(),null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='training-'+model+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
@@ -332,19 +363,22 @@ async function connect(){try{const c=await request('/capabilities');ready=c.laun
 form.onsubmit=async e=>{
  e.preventDefault();if(busy||checking||preparingDataset||preparingVlm)return;
  if(!form.reportValidity())return;
- if(model==='vlm'&&(!vlmPrepared||JSON.stringify(payload())!==vlmFingerprint)){$('#job-state').textContent='설정 확인 중';await verifyVlm();if(!vlmPrepared||JSON.stringify(payload())!==vlmFingerprint){$('#job-state').textContent='설정 확인 필요';return;}}
- if(model==='detector'&&detectorDatasetDirty()){alert('데이터셋 또는 클래스 설정이 변경되었습니다. annotation 자동 생성 또는 data.yaml 저장을 다시 실행하세요.');syncDetectorDataset();return;}
- if(!ready){checking=true;await connect();checking=false;if(!ready){$('#job-state').textContent='연결 필요';$('#logs').textContent='실행 API가 연결되지 않아 학습을 시작하지 않았습니다. 설정 저장으로 요청 JSON을 내려받을 수 있습니다.';return;}}
+ setLaunchPreparing(true,'학습 요청을 준비하고 있습니다. 잠시만 기다려주세요.');$('#job-state').textContent='학습 준비 중';
+ if(model==='vlm'&&(!vlmDataset||vlmDataset.signature!==vlmDatasetSignature())){$('#job-state').textContent='데이터 생성 필요';setLaunchPreparing(false,'먼저 「train.json · valid.json 생성」 버튼을 눌러주세요.');setVlmAnnotationStatus('train.json · valid.json을 생성한 뒤 학습을 시작하세요.','error');return;}
+ if(model==='vlm'&&(!vlmPrepared||JSON.stringify(payload())!==vlmFingerprint)){await verifyVlm();if(!vlmPrepared||JSON.stringify(payload())!==vlmFingerprint){$('#job-state').textContent='학습 준비 실패';setLaunchPreparing(false,$('#launch-guidance').textContent||'학습 설정을 확인해주세요.');return;}}
+ if(model==='detector'&&detectorDatasetDirty()){alert('데이터셋 또는 클래스 설정이 변경되었습니다. annotation 자동 생성 또는 data.yaml 저장을 다시 실행하세요.');syncDetectorDataset();setLaunchPreparing(false,'먼저 「annotation 자동 생성」 또는 「클래스 적용 · data.yaml 저장」 버튼을 눌러주세요.');return;}
+ if(!ready){checking=true;await connect();checking=false;if(!ready){$('#job-state').textContent='연결 필요';$('#logs').textContent='실행 API가 연결되지 않아 학습을 시작하지 않았습니다.';setLaunchPreparing(false,'실행 API 연결을 확인해주세요.');return;}}
  let datasetMetadata={};
- if(trees[model]&&(trees[model].state.selected_files.length||trees[model].state.new_version)){checking=true;setTrainingLock(true);$('#job-state').textContent='Dataset 확인 중';try{datasetMetadata=await trees[model].beforeLaunch();}catch(e){$('#job-state').textContent='Dataset 연결 실패';$('#logs').textContent=e.message;return;}finally{checking=false;setTrainingLock(busy);}}
- const launchParams={...(model==='vlm'?vlmPrepared.params:payload()),...datasetMetadata,ui_settings:{...drafts[model]}};busy=true;setTrainingLock(true);$('#job-state').textContent='요청 중';
+ if(trees[model]&&(trees[model].state.selected_files.length||trees[model].state.new_version)){checking=true;setTrainingLock(true);$('#job-state').textContent='Dataset 확인 중';try{datasetMetadata=await trees[model].beforeLaunch();}catch(e){$('#job-state').textContent='Dataset 연결 실패';$('#logs').textContent=e.message;setLaunchPreparing(false,'Dataset 연결 실패: '+e.message);return;}finally{checking=false;setTrainingLock(busy);}}
  try{
+  if(model==='vlm'&&!vlmPrepared)throw Error('Dataset 연결 중 학습 준비 상태가 초기화됐습니다. 다시 시도해주세요.');
+  const launchParams={...(model==='vlm'?vlmPrepared.params:payload()),...datasetMetadata,ui_settings:{...drafts[model]}};busy=true;setTrainingLock(true);$('#job-state').textContent='요청 중';
   const job=await request('/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(launchParams)});if(!job.id)throw Error('서버가 작업 ID를 반환하지 않았습니다.');
-  activeJobId=job.id;sessionStorage.setItem('ivx-active-job-id',String(job.id));setTrainingLock(true);$('#job-id').textContent=String(job.id);$('#logs').textContent='학습 요청이 접수되었습니다.';
+  activeJobId=job.id;sessionStorage.setItem('ivx-active-job-id',String(job.id));$('#launch').dataset.preparing='false';$('#launch').textContent='▶ 학습 실행 중';setLaunchGuidance('학습 요청이 접수되었습니다.','success');setTrainingLock(true);$('#job-id').textContent=String(job.id);$('#logs').textContent='학습 요청이 접수되었습니다.';
   await restoreActiveJob();
- }catch(err){$('#job-state').textContent='요청 실패';$('#logs').textContent=err.message;busy=false;setTrainingLock(false);}
+ }catch(err){$('#job-state').textContent='요청 실패';$('#logs').textContent=err.message;busy=false;setTrainingLock(false);setLaunchPreparing(false,'학습 요청 실패: '+err.message);}
 };
-document.querySelector('.close').onclick=e=>{if(window.parent!==window){e.preventDefault();window.parent.postMessage({type:'ivx-close-train'},location.origin);}};
+document.querySelector('.close').onclick=e=>{if(!busy)resetTrainingForm();if(window.parent!==window){e.preventDefault();window.parent.postMessage({type:'ivx-close-train'},location.origin);}};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&window.parent!==window){e.preventDefault();window.parent.postMessage({type:'ivx-close-train'},location.origin);}});
 document.querySelector('#vlm-refresh')?.addEventListener('click',loadVlmResources);
 fields.vlm_modality?.addEventListener('change',()=>{if(trees.vlm){trees.vlm.invalidate();trees.vlm.load(true);}populateVlmChoices(true);preview();});
@@ -355,9 +389,210 @@ if(window.DatasetTrees){
    saved:()=>drafts[kind]?.dataset_tree||{},folders:()=>kind==='detector'?detectorFolders:vlmFolders,
    locked:()=>busy||checking||model!==kind,modality:()=>kind==='vlm'?fields.vlm_modality.value:'both',classes:detectorClasses,request,
    invalidate:()=>{if(kind==='detector')preparedDataset=null;else{vlmDataset=null;vlmPrepared=null;}trees[kind]?.invalidate();$('#launch').disabled=busy;},
-   save:state=>{drafts[kind]={...drafts[kind],dataset_tree:state};const target=kind==='detector'?detectorFolders:vlmFolders;target.splice(0,target.length,...state.selected_folders);if(!busy&&kind===model)preview();try{sessionStorage.setItem('ivx-training-drafts-v1',JSON.stringify(drafts));}catch(_){}},
+   save:state=>{drafts[kind]={...drafts[kind],dataset_tree:state};const target=kind==='detector'?detectorFolders:vlmFolders;target.splice(0,target.length,...state.selected_folders);if(!busy&&!checking&&kind===model)preview();try{sessionStorage.setItem('ivx-training-drafts-v1',JSON.stringify(drafts));}catch(_){}},
   });
  }
 }
-window.addEventListener('pagehide',()=>clearTimeout(jobTimer));choose(model);renderDetectorFolders();busy=true;setTrainingLock(true);connect();(async()=>{await restoreActiveJob();await loadDetectorFolders(false);setTrainingLock(busy);})();
+window.addEventListener('pagehide',()=>clearTimeout(jobTimer));
+window.addEventListener('message',e=>{if(e.origin===location.origin&&e.data?.type==='ivx-train-reopened'){pendingResetCheck=true;restoreActiveJob(true);}});
+choose(model);renderDetectorFolders();busy=true;setTrainingLock(true);connect();(async()=>{await restoreActiveJob();await loadDetectorFolders(false);setTrainingLock(busy);})();
 })();
+
+/* 학습 / 배포 페이지 전환 + 배포(ONNX 변환 · VLM 다운로드) 화면. */
+(()=>{
+'use strict';
+const API='/training-api';
+const $=s=>document.querySelector(s);
+let deployModel='detector',exportTimer=null,exportAllowed=false,deploymentAdmin=false;
+
+async function request(path,options={}){
+ const r=await fetch(API+path,{credentials:'same-origin',...options,signal:AbortSignal.timeout(180000)});
+ if(!r.headers.get('content-type')?.includes('application/json'))throw Error('배포 API가 JSON 응답을 반환하지 않았습니다. HTTP '+r.status);
+ const data=await r.json();if(!r.ok)throw Object.assign(Error(data.error||'서버 요청 실패'),{data});return data;
+}
+
+function showPage(page){
+ $('#page-tab-train').setAttribute('aria-selected',String(page==='train'));
+ $('#page-tab-deploy').setAttribute('aria-selected',String(page==='deploy'));
+ $('#page-train-nav').hidden=page!=='train';
+ $('#train-form').hidden=page!=='train';
+ $('#page-deploy').hidden=page!=='deploy';
+ if(page==='deploy'){loadDetectorModels();loadVlmModels();loadDeploymentHistory();}
+}
+$('#page-tab-train').addEventListener('click',()=>showPage('train'));
+$('#page-tab-deploy').addEventListener('click',()=>showPage('deploy'));
+
+function chooseDeployModel(next){
+ deployModel=next;
+ document.querySelectorAll('[data-deploy-model]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.deployModel===next)));
+ $('#deploy-detector').hidden=next!=='detector';
+ $('#deploy-vlm').hidden=next!=='vlm';
+}
+document.querySelectorAll('[data-deploy-model]').forEach(b=>b.onclick=()=>chooseDeployModel(b.dataset.deployModel));
+
+function formatBytes(n){
+ if(!Number.isFinite(n))return '';
+ const units=['B','KB','MB','GB'];let v=n,i=0;
+ while(v>=1024&&i<units.length-1){v/=1024;i++;}
+ return v.toFixed(i===0?0:1)+' '+units[i];
+}
+function formatWhen(epochSeconds){
+ if(!Number.isFinite(epochSeconds))return '';
+ return new Date(epochSeconds*1000).toLocaleString();
+}
+
+let selectedDetectorModel=null;
+async function loadDetectorModels(){
+ const list=$('#deploy-detector-list');
+ list.innerHTML='<p class="hint">불러오는 중…</p>';
+ try{
+  const {models}=await request('/deploy/detector/models');
+  if(!models.length){list.innerHTML='<p class="hint">학습된 Detector 모델(best.pt)이 없습니다.</p>';return;}
+  list.innerHTML='';
+  models.forEach(m=>{
+   const row=document.createElement('label');
+   row.className='check';
+   row.style.cssText='align-items:flex-start;justify-content:flex-start;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px';
+   const radio=document.createElement('input');
+   radio.type='radio';radio.name='deploy-detector-model';radio.value=m.path;radio.style.cssText='margin-top:3px;flex-shrink:0';
+   radio.onchange=()=>{selectedDetectorModel=m;$('#deploy-detector-selected').textContent='선택됨: '+m.run_name;$('#deploy-detector-export').disabled=!exportAllowed;};
+   const info=document.createElement('span');
+   info.style.cssText='text-align:left';
+   info.innerHTML=`<b>학습 프로젝트: ${m.run_name}</b><br>`+
+     `<span class="muted">학습 모델: ${m.model_size||'알 수 없음'} · 학습 시기: ${formatWhen(m.mtime)}</span><br>`+
+     `<span class="muted">파일 크기: ${formatBytes(m.size)}</span>`+
+     (m.onnx_files.length?`<br><span class="muted">기존 변환: ${m.onnx_files.join(', ')}</span>`:'');
+   row.appendChild(radio);row.appendChild(info);
+   list.appendChild(row);
+  });
+ }catch(e){list.innerHTML='<p class="hint">모델 목록을 불러오지 못했습니다: '+e.message+'</p>';}
+}
+$('#deploy-detector-refresh').addEventListener('click',loadDetectorModels);
+
+function exportParams(){
+ const params={weights:selectedDetectorModel.path,project_name:selectedDetectorModel.run_name};
+ const num=(id,key)=>{const v=$(id).value.trim();if(v!=='')params[key]=Number(v);};
+ num('#deploy-imgsz-w','imgsz_w');num('#deploy-imgsz-h','imgsz_h');
+ num('#deploy-conf','conf');num('#deploy-iou','iou');
+ num('#deploy-max-det','max_det');num('#deploy-opset','opset');
+ return params;
+}
+
+function renderDownloads(outputs){
+ const box=$('#deploy-detector-downloads');
+ box.innerHTML='';
+ if(!outputs)return;
+ [['raw','원본 ONNX'],['final','최종 ONNX (NMS 포함)']].forEach(([key,label])=>{
+  if(!outputs[key])return;
+  const a=document.createElement('a');
+  a.href=API+'/deploy/detector/download?path='+encodeURIComponent(outputs[key]);
+  a.className='primary';a.style.cssText='display:inline-block;margin:10px 8px 0 0;padding:9px 14px;border-radius:8px';
+  a.textContent='⬇ '+label+' 다운로드';
+  box.appendChild(a);
+ });
+}
+
+async function pollExport(jobId){
+ clearTimeout(exportTimer);
+ try{
+  const job=await request('/deploy/export/'+jobId);
+  const stateLabel={queued:'대기 중',running:'변환 중',completed:'완료',failed:'실패'}[job.status]||job.status;
+  $('#deploy-detector-state').textContent=stateLabel;
+  $('#deploy-detector-status').textContent=job.error||'';
+  const log=$('#deploy-detector-log');
+  log.hidden=!job.logs;log.textContent=job.logs||'';log.scrollTop=log.scrollHeight;
+  if(job.status==='completed'){renderDownloads(job.outputs);$('#deploy-detector-export').disabled=!exportAllowed;loadDeploymentHistory();return;}
+  if(job.status==='failed'){$('#deploy-detector-export').disabled=!exportAllowed;return;}
+  exportTimer=setTimeout(()=>pollExport(jobId),1500);
+ }catch(e){$('#deploy-detector-status').textContent='상태 조회 실패: '+e.message;$('#deploy-detector-export').disabled=!exportAllowed;}
+}
+$('#deploy-detector-export').addEventListener('click',async()=>{
+ if(!selectedDetectorModel)return;
+ $('#deploy-detector-export').disabled=true;
+ $('#deploy-detector-downloads').innerHTML='';
+ $('#deploy-detector-state').textContent='요청 중';$('#deploy-detector-status').textContent='';
+ try{
+  const job=await request('/deploy/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(exportParams())});
+  pollExport(job.id);
+ }catch(e){$('#deploy-detector-state').textContent='요청 실패';$('#deploy-detector-status').textContent=e.message;$('#deploy-detector-export').disabled=!exportAllowed;}
+});
+
+function formatDeploymentTime(value){
+ const date=new Date(value);return Number.isNaN(date.getTime())?value:date.toLocaleString('ko-KR');
+}
+async function loadDeploymentHistory(){
+ const box=$('#deployment-history');
+ if(!box)return;
+ box.innerHTML='<p class="hint">배포 기록을 불러오는 중…</p>';
+ try{
+  const {deployments}=await request('/deploy/history');
+  if(!deployments.length){box.innerHTML='<p class="hint">완료된 배포 기록이 없습니다.</p>';return;}
+  box.innerHTML='';
+  deployments.forEach(item=>{
+   const row=document.createElement('article');row.className='deployment-row';
+   const user=document.createElement('div');user.innerHTML='<small>배포 사용자</small><div class="deployment-value"></div>';user.querySelector('.deployment-value').textContent=item.deployed_by||'-';
+   const project=document.createElement('div');project.innerHTML='<small>배포 프로젝트명</small><div class="deployment-value"></div>';project.querySelector('.deployment-value').textContent=item.project_name||'-';
+   const time=document.createElement('div');time.innerHTML='<small>배포 시간</small><div class="deployment-value"></div>';time.querySelector('.deployment-value').textContent=formatDeploymentTime(item.deployed_at);
+   row.append(user,project,time);
+   if(deploymentAdmin){
+    const remove=document.createElement('button');remove.type='button';remove.className='deployment-delete';remove.textContent='×';remove.title='배포 기록 삭제';remove.setAttribute('aria-label',(item.project_name||'배포')+' 기록 삭제');
+    remove.addEventListener('click',async()=>{if(!confirm('이 배포 기록을 삭제하시겠습니까?'))return;remove.disabled=true;try{await request('/deploy/history/'+encodeURIComponent(item.id),{method:'DELETE'});row.remove();if(!box.children.length)box.innerHTML='<p class="hint">완료된 배포 기록이 없습니다.</p>';}catch(e){remove.disabled=false;alert(e.message);}});
+    row.appendChild(remove);
+   }
+   box.appendChild(row);
+  });
+ }catch(e){box.innerHTML='<p class="hint">배포 기록을 불러오지 못했습니다: '+e.message+'</p>';}
+}
+$('#deployment-history-refresh').addEventListener('click',loadDeploymentHistory);
+
+let vlmModels=[],vlmModality='image';
+function escapeHtml(value){return String(value??'').replace(/[&<>\"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[char]));}
+function formatBytes(value){if(!Number.isFinite(Number(value)))return '-';const units=['B','KB','MB','GB'];let n=Number(value),i=0;while(n>=1024&&i<units.length-1){n/=1024;i++;}return n.toFixed(i?1:0)+' '+units[i];}
+function renderVlmModels(){
+ const list=document.getElementById('deploy-vlm-list');
+ const models=vlmModels.filter(m=>m.modality===vlmModality);
+ if(!models.length){list.innerHTML='<p class="hint">학습된 VLM 모델이 없습니다.</p>';return;}
+ list.innerHTML='';
+ models.forEach(m=>{
+  const row=document.createElement('div');row.style.cssText='display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;gap:12px';
+  const info=document.createElement('span');const created=m.created_at?new Date(m.created_at).toLocaleString('ko-KR'):'-';const epoch=m.epoch==null?'-':m.epoch;
+  info.innerHTML='<b>'+escapeHtml(m.model_name||m.label)+'</b><br><span class="muted">기반 모델: '+escapeHtml(m.base_model||'-')+' · Epoch '+epoch+' · '+escapeHtml(m.status||'completed')+'<br>'+created+' · '+formatBytes(m.size)+'</span>';
+  const a=document.createElement('a');a.href=API+'/deploy/vlm/download?path='+encodeURIComponent(m.path);a.className='primary';a.style.cssText='padding:9px 14px;border-radius:8px;white-space:nowrap';a.textContent='⬇ zip 다운로드';row.appendChild(info);row.appendChild(a);list.appendChild(row);
+ });
+}
+async function loadVlmModels(){
+ const list=document.getElementById('deploy-vlm-list');list.innerHTML='<p class="hint">불러오는 중…</p>';
+ try{const response=await request('/deploy/vlm/models');vlmModels=response.models||[];renderVlmModels();}catch(e){list.innerHTML='<p class="hint">모델 목록을 불러오지 못했습니다: '+e.message+'</p>';}
+}
+document.getElementById('deploy-vlm-refresh').addEventListener('click',loadVlmModels);
+document.getElementById('deploy-vlm-tabs').addEventListener('click',e=>{const button=e.target.closest('[data-vlm-modality]');if(!button)return;vlmModality=button.dataset.vlmModality;document.querySelectorAll('[data-vlm-modality]').forEach(item=>item.classList.toggle('active',item===button));renderVlmModels();});
+
+fetch('/access-api/auth/me',{credentials:'same-origin',cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject()).then(me=>{
+ deploymentAdmin=Boolean(me.is_admin);exportAllowed=Boolean(me.is_admin||(me.permissions||[]).includes('TRAIN_DEPLOY'));loadDeploymentHistory();
+ if(exportAllowed)return;
+ const exportBtn=$('#deploy-detector-export');
+ exportBtn.title='학습 및 배포 권한이 필요합니다.';
+ new MutationObserver(()=>{if(selectedDetectorModel)exportBtn.disabled=true;}).observe(exportBtn,{attributes:true,attributeFilter:['disabled']});
+ document.querySelectorAll('#deploy-vlm-list, #deploy-detector-downloads').forEach(el=>el.addEventListener('click',e=>{
+  const link=e.target.closest('a');
+  if(!link)return;
+  e.preventDefault();alert('학습 및 배포 권한이 필요합니다.');
+ },true));
+}).catch(()=>{});
+})();
+
+/* DB permission guard: backend remains authoritative. */
+fetch('/access-api/auth/me',{credentials:'same-origin',cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject()).then(me=>{
+ const allowed=me.is_admin||(me.permissions||[]).includes('TRAIN_DEPLOY');
+ if(allowed)return;
+ const launch=document.getElementById('launch');
+ const block=e=>{e.preventDefault();e.stopImmediatePropagation();alert('학습 및 배포 권한이 필요합니다.');};
+ launch.disabled=true;launch.title='학습 및 배포 권한이 필요합니다.';launch.addEventListener('click',block,true);
+ new MutationObserver(()=>{launch.disabled=true;}).observe(launch,{attributes:true,attributeFilter:['disabled']});
+}).catch(()=>{});
+
+/* "학습 서버" 표시란은 TRAINING_SSH_HOST(.env)를 그대로 보여준다. */
+fetch('/training-metrics.json',{credentials:'same-origin',cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{
+ const field=document.getElementById('training-server-host');
+ if(field&&data.host)field.value=data.host+' · SSH';
+}).catch(()=>{});

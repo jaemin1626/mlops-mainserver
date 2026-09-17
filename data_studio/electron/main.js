@@ -11,6 +11,7 @@ if (process.platform === 'linux' && process.env.GTK_USE_PORTAL === undefined) {
 const { app, BrowserWindow, ipcMain, dialog, protocol, shell } = require('electron');
 const { vlmJsonPathForMediaPath } = require('../shared/vlmJsonPaths');
 const { scanYoloDashboard } = require('../shared/yoloDashboardScan');
+const { scanVlmDashboard } = require('../shared/vlmDashboardScan');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -489,6 +490,41 @@ ipcMain.handle('scanYoloDashboard', (_, detectorRoot) => {
         rejected: 0,
       },
     };
+  }
+});
+
+function emptyVlmDashboardSummary(vlmRoot) {
+  return {
+    scannedAt: new Date().toISOString(),
+    vlmRoot,
+    folders: [],
+    totals: {
+      totalImages: 0,
+      labeledImages: 0,
+      labelRate: 0,
+      imageCount: 0,
+      videoCount: 0,
+      labeledImageCount: 0,
+      labeledVideoCount: 0,
+      imageLabelRate: 0,
+      videoLabelRate: 0,
+      byStatus: { draft: 0, submitted: 0, approved: 0, rejected: 0 },
+      pendingReview: 0,
+      rejected: 0,
+    },
+  };
+}
+
+ipcMain.handle('scanVlmDashboard', (_, vlmRoot) => {
+  const root = path.resolve(String(vlmRoot || '/data/datasets/vlm').trim());
+  if (!fs.existsSync(root)) {
+    return emptyVlmDashboardSummary(root);
+  }
+  try {
+    return scanVlmDashboard(root);
+  } catch (e) {
+    console.error(e);
+    return emptyVlmDashboardSummary(root);
   }
 });
 

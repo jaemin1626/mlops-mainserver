@@ -8,9 +8,13 @@ import time
 import urllib.request
 import zipfile
 from urllib.parse import urlparse, quote
+from client import TRAINING_ROOT
 
 API=os.getenv('DATASET_API_URL','http://apiserver:8008')
-FILES=os.getenv('DATASET_FILES_URL','http://172.16.4.84:8081')
+# No hardcoded fallback IP: CLEARML_FILES_HOST is derived from CLEARML_SERVER_IP by
+# packaging/apply-env.sh, so an empty default here fails closed instead of silently
+# trusting a stale dev-server address if the env var is ever missing.
+FILES=os.getenv('CLEARML_FILES_HOST','')
 NAMES={'detector':'Detector','vlm':'VLM'}
 
 class RangeFile(io.RawIOBase):
@@ -38,7 +42,7 @@ class Registry:
         return result.get('data',{})
     def download(self,uri,headers=None,limit=16000000,require_range=False):
         parsed=urlparse(uri);allowed=urlparse(FILES)
-        if parsed.scheme!=allowed.scheme or parsed.netloc!=allowed.netloc:raise ValueError('허용된 ClearML 파일 서버의 아티팩트가 아닙니다.')
+        if parsed.scheme!=allowed.scheme or parsed.netloc!=allowed.netloc:raise ValueError(f'허용된 ClearML 파일 서버의 아티팩트가 아닙니다. (uri={parsed.scheme}://{parsed.netloc}, allowed={allowed.scheme}://{allowed.netloc})')
         req=urllib.request.Request(uri,headers={'Cookie':self.cookie,**(headers or {})})
         with urllib.request.urlopen(req,timeout=60) as response:
             if require_range and response.status!=206:raise RuntimeError('파일 서버가 Dataset 부분 다운로드를 지원하지 않습니다.')
@@ -93,7 +97,7 @@ class Registry:
             rows=json.loads(text) if name.endswith('.json') else text.splitlines()
             for row in rows:
                 path=row if isinstance(row,str) else row.get('image',row.get('video',''))
-                prefixes=['/workspace/Dataset/'+kind+'/','/home/intellivix/train/Dataset/'+kind+'/',kind+'/']
+                prefixes=['/workspace/Dataset/'+kind+'/',TRAINING_ROOT+'/Dataset/'+kind+'/',kind+'/']
                 for prefix in prefixes:
                     if path.startswith(prefix):path=path[len(prefix):];break
                 if path:splits[key].append(path)
@@ -238,6 +242,62 @@ class Registry:
                 try:self.call('tasks.failed',{'task':node['id'],'force':True,'status_reason':'Dataset branch creation failed'})
                 except Exception:pass
             raise
+    def dataset_deletion_plan(self, task_ids):
+        """Return a de-duplicated, child-first deletion plan for Dataset tasks."""
+        selected = list(dict.fromkeys(task_ids))
+        nodes = {}
+        children = {}
+        for kind in NAMES:
+            for node in self.graph(kind).get('nodes', []):
+                item = {**node, 'dataset_type': kind, 'dataset_name': NAMES[kind]}
+                nodes[item['id']] = item
+                children.setdefault(item['id'], [])
+        for node in nodes.values():
+            parent_id = node.get('parent_id')
+            if parent_id in nodes:
+                children.setdefault(parent_id, []).append(node['id'])
+
+        selected_dataset_ids = [task_id for task_id in selected if task_id in nodes]
+        visited = set()
+        visiting = set()
+        descendant_ids = set()
+        delete_order = []
+
+        def visit(task_id, root_id):
+            if task_id in visited:
+                if task_id != root_id:
+                    descendant_ids.add(task_id)
+                return
+            if task_id in visiting:
+                raise ValueError('Dataset 관계에 순환 참조가 있어 삭제할 수 없습니다.')
+            visiting.add(task_id)
+            for child_id in children.get(task_id, []):
+                descendant_ids.add(child_id)
+                visit(child_id, root_id)
+            visiting.remove(task_id)
+            visited.add(task_id)
+            delete_order.append(task_id)
+
+        for task_id in selected_dataset_ids:
+            visit(task_id, task_id)
+
+        def public(task_id):
+            node = nodes[task_id]
+            return {
+                'id': task_id,
+                'dataset_name': node.get('dataset_name') or node.get('name') or 'Dataset',
+                'version': node.get('version') or '',
+                'parent_id': node.get('parent_id'),
+            }
+
+        return {
+            'selected_dataset_ids': selected_dataset_ids,
+            'selected': [public(task_id) for task_id in selected_dataset_ids],
+            'descendants': [public(task_id) for task_id in delete_order if task_id in descendant_ids],
+            'delete_order': [public(task_id) for task_id in delete_order],
+            'requires_confirmation': bool(descendant_ids),
+        }
+
     def children(self,task_id):
         for kind in NAMES:
             graph=self.graph(kind)

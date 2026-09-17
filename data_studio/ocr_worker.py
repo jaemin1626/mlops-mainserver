@@ -32,7 +32,6 @@ def configure_stdio_utf8() -> None:
 
 configure_stdio_utf8()
 
-
 def _add_windows_dll_dirs() -> None:
     """Electron spawn 환경에서 torch/paddle 종속 DLL을 못 찾는 WinError 127 완화."""
     if sys.platform != "win32" or not hasattr(os, "add_dll_directory"):

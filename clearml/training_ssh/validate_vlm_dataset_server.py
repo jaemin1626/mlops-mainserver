@@ -1,6 +1,6 @@
-import sys,json,tempfile,shutil
+import os,sys,json,tempfile,shutil
 from pathlib import Path
-sys.path.insert(0,'/home/intellivix/train/scripts')
+sys.path.insert(0,os.environ.get('TRAINING_SSH_ROOT','/home/intellivix/train')+'/scripts')
 from mlops_vlm_dataset import build,ROOT
 with tempfile.TemporaryDirectory() as tmp:
     root=Path(tmp);helpers=root/'VLM/scripts/data';helpers.mkdir(parents=True)

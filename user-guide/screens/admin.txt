@@ -1,0 +1,15 @@
+▶
+SETTINGS
+Profile
+Profile
+Configuration
+Workspace
+Storage Cleanup
+Admin
+Intellivix Admin
+WebApp: 2.3.0-705 • Server: 2.3.0-705 • API: 2.34
+RUNNING DRAFT TASKS
+Execute any draft task manually using:
+‘clearml-agent execute --id ’
+Don't show again
+3 / 15

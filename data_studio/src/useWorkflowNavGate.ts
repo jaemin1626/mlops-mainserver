@@ -29,6 +29,7 @@ export function useWorkflowNavGate({
       if (navPromptRef.current) return;
       const prompt = resolveNavPrompt(workflowRole, workflowStatus, targetIndex);
       if (prompt) {
+        navPromptRef.current = prompt;
         setNavPrompt(prompt);
         return;
       }
@@ -40,6 +41,7 @@ export function useWorkflowNavGate({
   const handleNavCancel = useCallback(async () => {
     if (!navPrompt || navBusy) return;
     const target = navPrompt.targetIndex;
+    navPromptRef.current = null;
     setNavPrompt(null);
     await onNavigate(target);
   }, [navBusy, navPrompt, onNavigate]);
@@ -51,6 +53,7 @@ export function useWorkflowNavGate({
       const target = navPrompt.targetIndex;
       const ok =
         navPrompt.kind === 'worker_submit' ? await onSubmitForReview() : await onApprove();
+      navPromptRef.current = null;
       setNavPrompt(null);
       if (ok) await onNavigate(target);
     } finally {

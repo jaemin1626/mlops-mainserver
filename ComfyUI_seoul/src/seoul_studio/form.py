@@ -17,6 +17,7 @@ class FormState:
     aspect_ratio: str = ""
     random_seed: bool = True
     repeat: int = 1
+    output_name: str = ""
 
 
 def random_seed_value() -> int:
@@ -60,4 +61,6 @@ def form_to_payload(state: FormState) -> dict[str, object]:
         payload["aspect_ratio"] = state.aspect_ratio.strip()
     if state.image_path.strip():
         payload["image_path"] = state.image_path.strip()
+    if state.output_name.strip():
+        payload["output_name"] = state.output_name.strip()
     return payload

@@ -10,6 +10,7 @@ import LabelHistoryPanel from '../components/LabelHistoryPanel';
 import WorkflowNavigateModal from '../components/WorkflowNavigateModal';
 import { useWorkflowNavGate } from '../useWorkflowNavGate';
 import type { YoloLaunchRequest } from '../dashboardTypes';
+import type { LabelAccessRole } from '../accessControl';
 import {
   appendLabelSaveHistory,
   canEditLabels,
@@ -26,6 +27,8 @@ import {
 } from '../yoloMeta';
 
 interface YoloWorkspaceProps {
+  accessRole: LabelAccessRole;
+  workflowUser: string;
   launchRequest?: YoloLaunchRequest | null;
   onLaunchConsumed?: () => void;
 }
@@ -54,8 +57,6 @@ interface SavedClassSet {
 
 const SAVED_SETS_STORAGE_KEY = 'intellivixYolo.savedClassSetsV1';
 const AUTO_SAVE_STORAGE_KEY = 'intellivixYolo.autoSaveV1';
-const WORKFLOW_ROLE_KEY = 'intellivixYolo.workflowRoleV1';
-const WORKFLOW_USER_KEY = 'intellivixYolo.workflowUserV1';
 const WORKFLOW_STATUS_FILTER_KEY = 'intellivixYolo.workflowStatusFilterV1';
 
 const STATUS_FILTER_OPTIONS: { value: 'all' | YoloWorkflowStatus; label: string }[] = [
@@ -91,7 +92,7 @@ function classNamesToYoloClasses(classNames: string[]): YoloClass[] {
   }));
 }
 
-const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ launchRequest = null, onLaunchConsumed }) => {
+const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ accessRole, workflowUser, launchRequest = null, onLaunchConsumed }) => {
   const [workFolderPath, setWorkFolderPath] = useState<string | null>(null);
   const [imageList, setImageList] = useState<OfflineImageItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -115,6 +116,9 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ launchRequest = null, onL
   const gotoInputRef = useRef<HTMLInputElement>(null);
   const [labelDropdownRect, setLabelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const [gotoValue, setGotoValue] = useState('');
+  const [rangePreviewIndex, setRangePreviewIndex] = useState(0);
+  const rangeInputRef = useRef<HTMLInputElement>(null);
+  const rangeInteractingRef = useRef(false);
   const [autoSave, setAutoSave] = useState(() => {
     try {
       return localStorage.getItem(AUTO_SAVE_STORAGE_KEY) !== '0';
@@ -128,21 +132,7 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ launchRequest = null, onL
   const [displayAnnotations, setDisplayAnnotations] = useState<BoundingBox[]>([]);
   const [displayMeta, setDisplayMeta] = useState<YoloImageMeta | null>(null);
 
-  const [workflowRole, setWorkflowRole] = useState<YoloWorkflowRole>(() => {
-    try {
-      const stored = localStorage.getItem(WORKFLOW_ROLE_KEY);
-      return stored === 'reviewer' ? 'reviewer' : 'worker';
-    } catch {
-      return 'worker';
-    }
-  });
-  const [workflowUser, setWorkflowUser] = useState(() => {
-    try {
-      return localStorage.getItem(WORKFLOW_USER_KEY) || '';
-    } catch {
-      return '';
-    }
-  });
+  const workflowRole: YoloWorkflowRole = accessRole === 'reviewer' ? 'reviewer' : 'worker';
   const [statusFilter, setStatusFilter] = useState<'all' | YoloWorkflowStatus>(() => {
     try {
       const stored = localStorage.getItem(WORKFLOW_STATUS_FILTER_KEY);
@@ -368,21 +358,7 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ launchRequest = null, onL
     };
   }, [statusFilter, imageListScanKey, statusFilterScanKey]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(WORKFLOW_ROLE_KEY, workflowRole);
-    } catch {
-      /* ignore */
-    }
-  }, [workflowRole]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(WORKFLOW_USER_KEY, workflowUser);
-    } catch {
-      /* ignore */
-    }
-  }, [workflowUser]);
 
   useEffect(() => {
     try {
@@ -606,10 +582,15 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ launchRequest = null, onL
     if (renameId) renameInputRef.current?.focus();
   }, [renameId]);
 
-  /** Goto 입력값을 현재 인덱스와 동기화 (필터 시 필터된 목록 기준) */
+  /** Goto·하단 슬라이더 값을 현재 인덱스와 동기화 (필터 시 필터된 목록 기준) */
   useEffect(() => {
-    if (navCount > 0) setGotoValue(String(currentIndex + 1));
-    else setGotoValue('');
+    if (navCount > 0) {
+      setGotoValue(String(currentIndex + 1));
+      setRangePreviewIndex(currentIndex);
+    } else {
+      setGotoValue('');
+      setRangePreviewIndex(0);
+    }
   }, [currentIndex, navCount]);
 
   /** 드롭다운 열릴 때 트리거 위치 갱신 (portal 위치용) */
@@ -826,10 +807,10 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ launchRequest = null, onL
   }, [displayItem, persistWorkflowMeta, requireWorkflowUser]);
 
   const labelsReadOnly = useMemo(() => {
-    if (workflowRole === 'reviewer') return true;
+    if (accessRole === 'viewer' || workflowRole === 'reviewer') return true;
     if (!displayMeta) return false;
     return !canEditLabels(workflowRole, displayMeta.workflowStatus);
-  }, [displayMeta, workflowRole]);
+  }, [accessRole, displayMeta, workflowRole]);
 
   const finishNavigate = useCallback(
     async (nextIndex: number) => {
@@ -860,18 +841,34 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ launchRequest = null, onL
     onApprove: handleApprove,
   });
 
+  useEffect(() => {
+    const el = rangeInputRef.current;
+    if (!el || navCount <= 0) return;
+    const onCommit = () => {
+      rangeInteractingRef.current = false;
+      const next = parseInt(el.value, 10);
+      if (!Number.isFinite(next) || next === currentIndex) return;
+      void finishNavigate(next);
+    };
+    el.addEventListener('change', onCommit);
+    return () => el.removeEventListener('change', onCommit);
+  }, [currentIndex, finishNavigate, navCount]);
+
   const goToIndex = useCallback(
     (nextIndex: number) => {
+      if (rangeInteractingRef.current) return;
       void requestNavigate(nextIndex);
     },
     [requestNavigate]
   );
 
   const goPrev = useCallback(() => {
+    if (rangeInteractingRef.current) return;
     void requestNavigate(currentIndex - 1);
   }, [currentIndex, requestNavigate]);
 
   const goNext = useCallback(() => {
+    if (rangeInteractingRef.current) return;
     void requestNavigate(currentIndex + 1);
   }, [currentIndex, requestNavigate]);
 
@@ -966,7 +963,7 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ launchRequest = null, onL
         if (currentItemRef.current) void saveCurrentRef.current();
         return;
       }
-      if (navPromptRef.current) return;
+      if (navPromptRef.current || rangeInteractingRef.current) return;
 
       if (key === 'a' || e.key === 'ArrowLeft') {
         e.preventDefault();
@@ -1193,27 +1190,10 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ launchRequest = null, onL
       </header>
 
       <div className="glass flex-shrink-0 border-b border-white/10 px-5 py-2.5 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-500 shrink-0">역할</label>
-          <select
-            value={workflowRole}
-            onChange={(e) => setWorkflowRole(e.target.value === 'reviewer' ? 'reviewer' : 'worker')}
-            className="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-white/10 text-sm text-white focus:border-[var(--accent-blue)] outline-none"
-          >
-            <option value="worker">작업자</option>
-            <option value="reviewer">검수자</option>
-          </select>
-        </div>
-        <div className="flex items-center gap-2 min-w-[10rem]">
-          <label className="text-xs text-slate-500 shrink-0">이름</label>
-          <input
-            type="text"
-            value={workflowUser}
-            onChange={(e) => setWorkflowUser(e.target.value)}
-            placeholder="홍길동"
-            className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-white/10 text-sm text-white placeholder:text-slate-600 focus:border-[var(--accent-blue)] outline-none"
-          />
-        </div>
+        <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-white/10 text-xs text-white">
+          {accessRole === 'reviewer' ? '검수자' : accessRole === 'worker' ? '작업자' : '조회 전용'}
+        </span>
+        {workflowUser ? <span className="text-xs text-slate-400">{workflowUser}</span> : null}
         <div className="h-5 w-px bg-white/10 hidden sm:block" />
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs text-slate-500 mr-1">상태 필터</span>
@@ -1554,18 +1534,28 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ launchRequest = null, onL
                       {currentIndex + 1} / {navCount}
                     </span>
                     <input
+                      ref={rangeInputRef}
                       type="range"
                       min={0}
                       max={Math.max(0, navCount - 1)}
-                      value={Math.min(currentIndex, Math.max(0, navCount - 1))}
-                      onChange={(e) => {
-                        const next = parseInt(e.target.value, 10);
-                        if (next !== currentIndex) {
-                          void goToIndex(next);
+                      value={Math.min(rangePreviewIndex, Math.max(0, navCount - 1))}
+                      onPointerDown={() => {
+                        rangeInteractingRef.current = true;
+                      }}
+                      onPointerCancel={() => {
+                        rangeInteractingRef.current = false;
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
+                          rangeInteractingRef.current = true;
                         }
+                      }}
+                      onInput={(e) => {
+                        setRangePreviewIndex(parseInt(e.currentTarget.value, 10));
                       }}
                       className="progress-slider flex-1 min-w-0 h-2 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white/30 [&::-webkit-slider-thumb]:shadow-lg [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0"
                       style={{ background: 'rgba(255,255,255,0.1)' }}
+                      aria-label="이미지 위치 이동"
                     />
                   </>
                 )}

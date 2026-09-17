@@ -66,7 +66,7 @@
 - `scripts/mlops_vlm_probe.py`: 허용된 기본값, 실제 GPU, 모델·JSON 목록, 자동 탐색 경로 조회.
 - `scripts/vlm_options.py`: 공통 옵션 매핑·검증.
 - `scripts/mlops_vlm_validate.py`: 컨테이너 생성 전 유효 설정·GPU·로컬 모델·JSON 경로 검증.
-- `VLM/scripts/train/train_clearml.py`: 검증 데이터에 NE/ANI 분류 지표가 생성되지 않는 경우 HF best checkpoint가 존재하는 eval_loss를 사용하도록 호환성 처리. 분류 F1이 생성되는 데이터에서는 기존 선택을 유지합니다.
+- `VLM/scripts/train/train_clearml.py`: 검증 데이터에 NE/ANI 분류 지표가 생성되지 않는 경우 HF best checkpoint가 존재하는 eval_loss를 사용하도록 호환성 처리. 분류 F1이 생성되는 데이터에서는 기존 선택을 유지합니다. Image·Video·Both 모두 이진 분류 지표 유무와 관계없이 학습/검증 loss 결과 플롯을 ClearML PLOTS와 로컬 `_plots` 폴더에 게시합니다.
 
 학습 서버의 설정 파일 자체는 변경하지 않으며 요청별 override만 적용합니다. `remote_train.sh vlm`에 override를 보내지 않습니다. 이 스크립트는 상태·종료 조회에 사용합니다.
 

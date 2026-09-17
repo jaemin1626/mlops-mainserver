@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+import datetime
 from pathlib import Path
 from vlm_options import SPECS
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +29,26 @@ def resources():
             directory=candidate.parent if candidate.is_file() else candidate
             if (directory/'config.json').is_file() and directory.resolve().is_relative_to(weights.resolve()):
                 models.append(dict(path='/workspace/'+str(directory.relative_to(ROOT)),label=str(directory.relative_to(weights)),modality=modality))
+    trained_root=ROOT/'VLM/runs/train'
+    trained_models=[]
+    for modality in ['image','video','both']:
+        modality_root=trained_root/modality
+        if not modality_root.is_dir():continue
+        for directory in modality_root.iterdir():
+            if not directory.is_dir() or directory.name.endswith('_plots'):continue
+            marker=directory/'adapter_config.json';full_config=directory/'config.json';weights_file=directory/'adapter_model.safetensors'
+            if not ((marker.is_file() and weights_file.is_file()) or full_config.is_file()):continue
+            metadata={};metadata_path=directory/'deployment_metadata.json'
+            try:
+                if metadata_path.is_file():metadata=json.loads(metadata_path.read_text(encoding='utf-8'))
+            except (OSError,ValueError):metadata={}
+            adapter={}
+            try:
+                if marker.is_file():adapter=json.loads(marker.read_text(encoding='utf-8'))
+            except (OSError,ValueError):adapter={}
+            stat=directory.stat()
+            trained_models.append(dict(path='/workspace/'+str(directory.relative_to(ROOT)),label=metadata.get('model_name') or directory.name,model_name=metadata.get('model_name') or directory.name,modality=modality,base_model=metadata.get('base_model') or adapter.get('base_model_name_or_path') or '',epoch=metadata.get('epoch'),created_at=metadata.get('created_at') or datetime.datetime.fromtimestamp(stat.st_mtime,datetime.timezone.utc).isoformat(),status=metadata.get('status') or 'completed',size=sum(item.stat().st_size for item in directory.rglob('*') if item.is_file())))
+    trained_models.sort(key=lambda item:item['created_at'],reverse=True)
     datasets=[]
     for base in [ROOT/'VLM/data/vlm',ROOT/'VLM/annotation/vlm', ROOT/'Dataset/vlm']:
         if not base.is_dir():continue
@@ -57,7 +78,7 @@ def resources():
     supported=all(flag in launcher and (not key or key in env_source) for flag,key,_ in SPECS.values() if flag.startswith(('--lora-','--video-','--gradient-checkpointing','--validation-','--max-samples','--eval-steps','--logging-steps','--save-')))
     dataset_root=ROOT/'Dataset/vlm'
     folders=[p.relative_to(dataset_root).as_posix() for p in sorted(dataset_root.rglob('*')) if p.is_dir() and not p.is_symlink() and p.resolve().is_relative_to(dataset_root.resolve())]
-    return dict(folders=folders,defaults=defaults,gpus=gpus,models=models,datasets=datasets,automatic=automatic,advanced_supported=supported)
+    return dict(folders=folders,defaults=defaults,gpus=gpus,models=models,trained_models=trained_models,datasets=datasets,automatic=automatic,advanced_supported=supported)
 
 if __name__=='__main__':
     try: print(json.dumps(resources(),ensure_ascii=False))

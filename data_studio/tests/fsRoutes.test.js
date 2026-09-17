@@ -136,3 +136,18 @@ test('GET fs/file serves video with correct content type and range support', asy
   assert.equal(response.headers.get('content-type'), 'video/mp4');
   assert.equal(response.headers.get('accept-ranges'), 'bytes');
 });
+
+test('GET fs/list hides dataset internal json and annotation directories', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'data-studio-hidden-'));
+  for (const name of ['image_json', 'video_json', 'images_json', 'videos_json', 'custom_json', 'annotation', 'Images', 'Videos']) fs.mkdirSync(path.join(root, name));
+  const previous = process.env.DATA_STUDIO_ALLOWED_ROOTS;
+  process.env.DATA_STUDIO_ALLOWED_ROOTS = root;
+  try {
+    const response = await fetch(`${baseUrl}/fs/list?path=${encodeURIComponent(root)}`);
+    const body = await response.json();
+    assert.deepEqual(body.entries.map((entry) => entry.name), ['Images', 'Videos']);
+  } finally {
+    if (previous === undefined) delete process.env.DATA_STUDIO_ALLOWED_ROOTS; else process.env.DATA_STUDIO_ALLOWED_ROOTS = previous;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

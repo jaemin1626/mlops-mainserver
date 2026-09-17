@@ -5,20 +5,20 @@ import re
 import shlex
 import subprocess
 from pathlib import PurePosixPath
-from client import ssh_command
+from client import ssh_command, TRAINING_ROOT
 from vlm_options import SPECS, LORA, VIDEO, value_valid
-SCRIPT='/home/intellivix/train/scripts/train.sh'
+SCRIPT=TRAINING_ROOT+'/scripts/train.sh'
 
 def resources():
     from detector import Jobs
-    result=subprocess.run(ssh_command('python3 /home/intellivix/train/scripts/mlops_vlm_probe.py'),capture_output=True,text=True,timeout=30,env=Jobs.child_env())
+    result=subprocess.run(ssh_command('python3 '+TRAINING_ROOT+'/scripts/mlops_vlm_probe.py'),capture_output=True,text=True,timeout=30,env=Jobs.child_env())
     if result.returncode:raise RuntimeError('VLM 서버 설정 조회 실패: '+result.stdout[-1000:])
     return json.loads(result.stdout)
 
 
 def container_path(value,kind):
     if '\\' in value or '..' in PurePosixPath(value).parts:raise ValueError('상위 경로 이동 불가')
-    if value.startswith('/home/intellivix/train/'):value='/workspace/'+value.removeprefix('/home/intellivix/train/')
+    if value.startswith(TRAINING_ROOT+'/'):value='/workspace/'+value.removeprefix(TRAINING_ROOT+'/')
     if kind=='model' and not value.startswith('/'):value='/workspace/VLM/'+str(PurePosixPath(value))
     path=PurePosixPath(value)
     roots=['/workspace/VLM/weights'] if kind=='model' else ['/workspace/VLM/data/vlm','/workspace/VLM/annotation/vlm','/workspace/Dataset/vlm']

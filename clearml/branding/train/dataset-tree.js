@@ -6,7 +6,7 @@ class DatasetTree {
   this.kind=kind;this.adapter=adapter;this.root=document.querySelector('#'+kind+'-dataset-tree');this.state={selected_files:[],selected_folders:[],source_node:null,source_id:null,new_version:false,version_group:'',branch:'',update_mode:'append',version_name:'',branch_name:'',...adapter.saved()};this.catalog=null;this.prepared=null;this.loading=false;this.generation=0;this.expanded=new Set(this.state.expanded||['.']);
   this.$=name=>document.querySelector('#'+kind+'-tree-'+name);
   this.$('refresh').onclick=()=>this.load(true);this.$('version').onchange=()=>this.selectVersionGroup(this.$('version').value);this.$('dataset').onchange=()=>this.selectVersionGroup(this.$('dataset').value?'':'');
-  this.$('new-version').onchange=()=>{this.state.new_version=this.$('new-version').checked;this.invalidate();this.syncBranchControls();this.save();};
+  this.$('new-version').onchange=()=>{this.state.new_version=this.$('new-version').checked;if(this.state.new_version&&this.directMode()){this.state.update_mode='root';this.$('update-root').checked=true;this.$('update-append').checked=false;}this.invalidate();this.syncBranchControls();this.save();};
   this.$('branch').onchange=()=>{const id=this.$('branch').value;if(id)this.loadVersion(id);else this.save();};
   this.$('update-append').onchange=()=>{if(this.$('update-append').checked)this.state.update_mode='append';this.invalidate();this.syncBranchControls();this.save();};
   this.$('update-root').onchange=()=>{if(this.$('update-root').checked)this.state.update_mode='root';this.invalidate();this.syncBranchControls();this.save();};
@@ -21,7 +21,7 @@ class DatasetTree {
  versionLabel(v){const value=String(v?.version||'');return /^v/i.test(value)?value:'v'+value;}
  groupVersions(){return (this.versions||[]).filter(v=>this.versionGroup(v)===this.state.version_group);}
  directMode(){return !this.state.version_group;}
- syncBranchControls(){const locked=this.locked(),disabled=locked||this.directMode()||!this.state.new_version,rootMode=this.state.update_mode==='root',versionInput=this.$('version-name');this.$('update-append').disabled=disabled;this.$('update-root').disabled=disabled;versionInput.disabled=disabled||!rootMode;versionInput.readOnly=!rootMode;versionInput.value=rootMode?(this.state.version_name||''):((this.state.version_group||'').replace(/^v/i,'v'));versionInput.required=!!(!disabled&&rootMode);this.$('branch-name').disabled=disabled;this.$('branch-name').required=!disabled;}
+ syncBranchControls(){const locked=this.locked(),direct=this.directMode();if(direct&&this.state.new_version)this.state.update_mode='root';const disabled=locked||!this.state.new_version,rootMode=this.state.update_mode==='root',versionInput=this.$('version-name');this.$('update-append').disabled=disabled||direct;this.$('update-root').disabled=disabled;this.$('update-root').checked=rootMode;this.$('update-append').checked=!rootMode;versionInput.disabled=disabled||!rootMode;versionInput.readOnly=!rootMode;versionInput.value=rootMode?(this.state.version_name||''):((this.state.version_group||'').replace(/^v/i,'v'));versionInput.required=!!(!disabled&&rootMode);this.$('branch-name').disabled=disabled;this.$('branch-name').required=!disabled;}
  locked(){return this.loading||this.adapter.locked();}
  save(){this.state.expanded=[...this.expanded];this.adapter.save(this.state);}
  async api(path,q){return this.adapter.request(path,q===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q)});}
@@ -62,7 +62,10 @@ class DatasetTree {
    this.$('status').textContent='Dataset 노드 불러오는 중…';const result=await this.api('/datasets/nodes?type='+this.kind);this.versions=result.nodes[0]?.versions||[];
    const dataset=this.$('dataset');dataset.replaceChildren(new Option('폴더 선택만 사용',''));result.nodes.forEach(n=>dataset.add(new Option(n.dataset_name,n.id)));dataset.value=this.state.source_id?result.nodes[0]?.id||'':'';
    const groups=[...new Set(this.versions.filter(v=>['completed','published'].includes(v.status)).map(v=>this.versionGroup(v)))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
-   const selectedNode=this.versions.find(v=>v.id===this.state.source_id);if(selectedNode)this.state.version_group=this.versionGroup(selectedNode);if(!groups.includes(this.state.version_group))this.state.version_group='';
+   const selectedNode=this.versions.find(v=>v.id===this.state.source_id);
+   if(selectedNode){this.state.version_group=this.versionGroup(selectedNode);}
+   else if(this.state.source_id){this.state.source_id=null;this.state.source_node=null;this.state.base_files=[];this.state.missing_files=0;this.state.version_group='';this.save();}
+   if(!groups.includes(this.state.version_group))this.state.version_group='';
    const select=this.$('version');select.replaceChildren(new Option('폴더로 직접 선택하기',''));groups.forEach(v=>select.add(new Option(v,v)));select.value=this.state.version_group;this.populateBranches();
    this.$('new-version').checked=!!this.state.new_version;this.$('update-append').checked=this.state.update_mode!=='root';this.$('update-root').checked=this.state.update_mode==='root';this.$('version-name').value=this.state.version_name||'';this.$('branch-name').value=this.state.branch_name||'';this.syncBranchControls();this.$('status').textContent=this.versions.length?this.sourceDescription():'등록된 Dataset 노드가 없습니다. 새 version 연결을 체크하면 첫 버전을 생성합니다.';
   }catch(e){this.$('status').textContent='데이터 불러오기 실패: '+e.message;}
@@ -101,7 +104,7 @@ class DatasetTree {
   const box=this.$('files');box.replaceChildren();const selected=new Set(this.state.selected_files),rows=this.catalog.records.filter(r=>selected.has(r.path));const splits={};['train','valid','test'].forEach(k=>(this.state[k+'_files']||[]).forEach(p=>splits[p]=k));
   rows.forEach(r=>{const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.dataset.file=r.path;check.checked=true;check.disabled=this.locked();label.append(check,document.createTextNode(r.path+' ↔ '+r.label+' · '+r.size+' B'+(splits[r.path]?' · '+splits[r.path]:'')));box.append(label);});
  }
- setDisabled(){[this.$('refresh'),this.$('dataset'),this.$('version'),this.$('all')].forEach(el=>el.disabled=this.locked());this.$('branch').disabled=this.locked()||this.directMode();this.$('new-version').disabled=this.locked()||this.directMode();this.root.querySelectorAll('input,button').forEach(el=>el.disabled=this.locked()||el.dataset.empty==='true');this.$('files').querySelectorAll('input').forEach(el=>el.disabled=this.locked());this.syncBranchControls();}
+ setDisabled(){[this.$('refresh'),this.$('dataset'),this.$('version'),this.$('all')].forEach(el=>el.disabled=this.locked());this.$('branch').disabled=this.locked()||this.directMode();this.$('new-version').disabled=this.locked();this.root.querySelectorAll('input,button').forEach(el=>el.disabled=this.locked()||el.dataset.empty==='true');this.$('files').querySelectorAll('input').forEach(el=>el.disabled=this.locked());this.syncBranchControls();}
  async prepare(){
   this.generation++;clearTimeout(this.timer);
   if(this.loading||this.adapter.locked())return null;if(this.state.selected_files.length<2)throw Error('학습할 유효한 데이터를 최소 2개 선택하세요.');

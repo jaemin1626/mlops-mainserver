@@ -35,6 +35,7 @@ class JobRunner:
         negative_prompt: str = "",
         random_seed: bool = True,
         aspect_ratio: str = "",
+        output_name: str = "",
     ) -> dict[str, Any]:
         payload = form_to_payload(
             FormState(
@@ -47,6 +48,7 @@ class JobRunner:
                 negative_prompt=negative_prompt,
                 aspect_ratio=aspect_ratio,
                 random_seed=random_seed,
+                output_name=output_name,
             )
         )
         parse_job(payload)

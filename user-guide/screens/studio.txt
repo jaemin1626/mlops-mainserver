@@ -1,0 +1,79 @@
+Intellivix Data Studio
+홈
+Detector
+VLM 작업
+폴더
+
+/data/datasets/detector
+
+▾
+detector
+▸
+generate
+▸
+testset
+▸
+trainset
+라벨링 현황
+
+/data/datasets/detector 하위 폴더별 작업·검수 상태
+
+마지막 스캔: 09. 17. 오전 11:52
+
+작업 역할 선택
+작업자
+검수자
+Intellivix Admin
+새로고침
+Detector
+VLM
+
+총 이미지
+
+1003
+
+라벨률
+
+99%
+
+검수 대기
+
+8
+
+반려
+
+0
+
+검수 대기 (8건)
+trainset
+8건
+프로젝트 폴더
+trainset
+100%
+이미지
+898
+라벨 있음
+897
+작업중
+884
+검수대기
+8
+승인
+6
+검수대기 열기
+generate
+0%
+이미지
+5
+라벨 있음
+0
+승인
+5
+testset
+100%
+이미지
+100
+라벨 있음
+100
+작업중
+100

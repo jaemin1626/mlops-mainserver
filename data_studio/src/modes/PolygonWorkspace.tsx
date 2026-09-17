@@ -1220,7 +1220,7 @@ const PolygonWorkspace: React.FC = () => {
             </div>
             <div className="p-5 overflow-auto flex-1 min-h-0 space-y-5 text-sm">
               <p className="text-xs text-amber-200/90 leading-relaxed bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2">
-                <strong className="text-amber-100">YOLO 라벨</strong> 탭의 캔버스 단축키(박스 도구, F 패스트 모드, Del 등)와{' '}
+                <strong className="text-amber-100">Detector</strong> 탭의 캔버스 단축키(박스 도구, F 패스트 모드, Del 등)와{' '}
                 <strong className="text-amber-100">다릅니다</strong>. 아래는 <strong className="text-cyan-200">Polygon 탭</strong> 기준입니다.
               </p>
 
@@ -1266,7 +1266,7 @@ const PolygonWorkspace: React.FC = () => {
                   </li>
                 </ul>
                 <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
-                  왼쪽 플로팅 패널: 라벨 표시 on/off, 확대·위치 초기화, 선 굵기·꼭짓점 크기·채우기 투명도. 이미지를 A/D로 넘겨도 <strong className="text-slate-400 font-normal">확대·위치는 유지</strong>됩니다 (YOLO와 동일).
+                  왼쪽 플로팅 패널: 라벨 표시 on/off, 확대·위치 초기화, 선 굵기·꼭짓점 크기·채우기 투명도. 이미지를 A/D로 넘겨도 <strong className="text-slate-400 font-normal">확대·위치는 유지</strong>됩니다 (Detector와 동일).
                 </p>
               </div>
 

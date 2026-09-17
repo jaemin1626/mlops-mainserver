@@ -1,0 +1,97 @@
+▶
+DATASETS
+Dataset
+VLM
+OPEN ARCHIVE
+VERSIONS LIST
+SORTED BY
+
+
+VLM
+● v 1
+Final
+MLOps
+Updated 27 minutes ago●Created by Intellivix Admin
+	
+
+
+VLM
+● v 3.0.0
+Final
+MLOps
+Updated 30 minutes ago●Created by Intellivix Admin
+	
+
+
+VLM
+● v 1.222
+Final
+MLOps
+Updated 39 minutes ago●Created by Intellivix Admin
+	
+
+
+VLM
+● v 1.0.0
+Final
+MLOps
+Updated an hour ago●Created by Intellivix Admin
+	
+
+
+VERSION BRANCHES
+전체 브랜치
+v1
+v3
+v4
+v5
+＋ 새 branch
+＋ 새 Version
+↻ 새로고침
+v1
+HEAD
+⑂ v5
+completed · 608 files
+2026. 9. 17. 오전 11:30:32
+VLM · v5 · v1
+부모: 없음
+하위 버전: 없음
+Branch 설명
+49 / 4000
+설명 저장
+포함 데이터 Tree
+302개 · train 272 / valid 30 / test 0
+전체 Dataset (302개)
+📁 images (302개)
+학습 활용 이력
+1회
+Image_20260917113036
+VLM · 2026. 9. 17. 오전 11:30:45
+in_progress
+부모 노드 대비 변경
+추가 302 · 삭제 0
+추가된 데이터 302개
+삭제된 데이터 0개
+VERSION INFO
+VLM v1
+FINAL
+ID
+64d4165a...
+Size
+50.6 MB(original)
+50.36 MB(compressed)
+File count
+608
+Link count
+0
+FILES CHANGED
+Added
+608
+Modified
+0
+Removed
+0
+Size Difference
+50.6 MB
+DESCRIPTION
+Created from the MLOps folder tree over REST API.

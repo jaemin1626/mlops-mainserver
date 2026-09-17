@@ -1,12 +1,14 @@
 """Tree API orchestration and verified Dataset version association."""
 import json
+import os
 import subprocess
-from client import ssh_command
+from client import ssh_command, TRAINING_ROOT
 from detector import JOBS
 from dataset_registry import Registry,NAMES
 
 def remote(operation,q):
-    result=subprocess.run(ssh_command('python3 /home/intellivix/train/scripts/mlops_dataset_tree.py'),input=json.dumps({'operation':operation,**q}),capture_output=True,text=True,timeout=300,env=JOBS.child_env())
+    payload={'operation':operation,'files_host':os.environ.get('CLEARML_FILES_HOST',''),**q}
+    result=subprocess.run(ssh_command('python3 '+TRAINING_ROOT+'/scripts/mlops_dataset_tree.py'),input=json.dumps(payload),capture_output=True,text=True,timeout=300,env=JOBS.child_env())
     try:data=json.loads(result.stdout)
     except ValueError as exc:raise RuntimeError('데이터 처리 서버 응답 오류: '+result.stderr[-300:]) from exc
     if result.returncode:raise ValueError(data.get('error','데이터 처리 실패'))

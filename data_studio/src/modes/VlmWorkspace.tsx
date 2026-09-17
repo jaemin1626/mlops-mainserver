@@ -4,6 +4,7 @@ import VlmReviewPanel from '../components/VlmReviewPanel';
 import WorkflowNavigateModal from '../components/WorkflowNavigateModal';
 import { useWorkflowNavGate } from '../useWorkflowNavGate';
 import type { VlmLaunchRequest } from '../dashboardTypes';
+import type { LabelAccessRole } from '../accessControl';
 import type { OfflineImageItem } from '../electron.d';
 import type { VlmDraftPayload } from '../vlmMerge';
 import type { VlmOfflineTask } from '../vlmTypes';
@@ -54,11 +55,13 @@ function workflowStatusBadgeClass(status: YoloWorkflowStatus): string {
 }
 
 interface VlmWorkspaceProps {
+  accessRole: LabelAccessRole;
+  workflowUser: string;
   launchRequest?: VlmLaunchRequest | null;
   onLaunchConsumed?: () => void;
 }
 
-const VlmWorkspace: React.FC<VlmWorkspaceProps> = ({ launchRequest = null, onLaunchConsumed }) => {
+const VlmWorkspace: React.FC<VlmWorkspaceProps> = ({ accessRole, workflowUser, launchRequest = null, onLaunchConsumed }) => {
   const [workFolderPath, setWorkFolderPath] = useState<string | null>(null);
   const [imageList, setImageList] = useState<OfflineImageItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -75,20 +78,7 @@ const VlmWorkspace: React.FC<VlmWorkspaceProps> = ({ launchRequest = null, onLau
     }
   });
 
-  const [workflowRole, setWorkflowRole] = useState<YoloWorkflowRole>(() => {
-    try {
-      return localStorage.getItem(WORKFLOW_ROLE_KEY) === 'reviewer' ? 'reviewer' : 'worker';
-    } catch {
-      return 'worker';
-    }
-  });
-  const [workflowUser, setWorkflowUser] = useState(() => {
-    try {
-      return localStorage.getItem(WORKFLOW_USER_KEY) || '';
-    } catch {
-      return '';
-    }
-  });
+  const workflowRole: YoloWorkflowRole = accessRole === 'reviewer' ? 'reviewer' : 'worker';
   const [statusFilter, setStatusFilter] = useState<'all' | YoloWorkflowStatus>(() => {
     try {
       const stored = localStorage.getItem(WORKFLOW_STATUS_FILTER_KEY);
@@ -137,21 +127,7 @@ const VlmWorkspace: React.FC<VlmWorkspaceProps> = ({ launchRequest = null, onLau
     }
   }, [autoSave]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(WORKFLOW_ROLE_KEY, workflowRole);
-    } catch {
-      /* ignore */
-    }
-  }, [workflowRole]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(WORKFLOW_USER_KEY, workflowUser);
-    } catch {
-      /* ignore */
-    }
-  }, [workflowUser]);
 
   useEffect(() => {
     try {
@@ -389,10 +365,10 @@ const VlmWorkspace: React.FC<VlmWorkspaceProps> = ({ launchRequest = null, onLau
   }, [currentItem, persistWorkflowMeta, requireWorkflowUser]);
 
   const labelsReadOnly = useMemo(() => {
-    if (workflowRole === 'reviewer') return true;
+    if (accessRole === 'viewer' || workflowRole === 'reviewer') return true;
     if (!displayMeta) return false;
     return !canEditLabels(workflowRole, displayMeta.workflowStatus);
-  }, [displayMeta, workflowRole]);
+  }, [accessRole, displayMeta, workflowRole]);
 
   const finishNavigate = useCallback(
     async (nextIndex: number) => {
@@ -611,21 +587,10 @@ const VlmWorkspace: React.FC<VlmWorkspaceProps> = ({ launchRequest = null, onLau
       </header>
 
       <div className="glass flex-shrink-0 border-b border-white/10 px-5 py-2 flex flex-wrap items-center gap-3">
-        <select
-          value={workflowRole}
-          onChange={(e) => setWorkflowRole(e.target.value === 'reviewer' ? 'reviewer' : 'worker')}
-          className="px-2 py-1 rounded-lg bg-slate-800 border border-white/10 text-xs text-white"
-        >
-          <option value="worker">작업자</option>
-          <option value="reviewer">검수자</option>
-        </select>
-        <input
-          type="text"
-          value={workflowUser}
-          onChange={(e) => setWorkflowUser(e.target.value)}
-          placeholder="이름"
-          className="w-24 px-2 py-1 rounded-lg bg-slate-800 border border-white/10 text-xs text-white placeholder:text-slate-600"
-        />
+        <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-white/10 text-xs text-white">
+          {accessRole === 'reviewer' ? '검수자' : accessRole === 'worker' ? '작업자' : '조회 전용'}
+        </span>
+        {workflowUser ? <span className="text-xs text-slate-400">{workflowUser}</span> : null}
         <div className="flex flex-wrap items-center gap-1">
           {STATUS_FILTER_OPTIONS.map((opt) => (
             <button
@@ -670,9 +635,8 @@ const VlmWorkspace: React.FC<VlmWorkspaceProps> = ({ launchRequest = null, onLau
             <div className="h-full flex flex-col items-center justify-center gap-3 p-8 text-center">
               <p className="text-slate-300 text-sm font-medium">VLM 작업: 미디어 폴더를 열어 주세요 (Ctrl+O)</p>
               <p className="text-slate-500 text-xs max-w-md">
-                태그 JSON은 <code className="text-slate-400">images_json/</code> ·{' '}
-                <code className="text-slate-400">videos_json/</code>, 검수 meta는 미디어 옆{' '}
-                <code className="text-slate-400">*.meta.json</code>
+                태그 JSON은 미디어와 같은 폴더의 <code className="text-slate-400">같은이름.json</code>, 검수 상태는{' '}
+                <code className="text-slate-400">같은이름.meta.json</code>
               </p>
             </div>
           ) : (

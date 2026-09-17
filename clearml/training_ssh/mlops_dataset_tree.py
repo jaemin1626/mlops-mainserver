@@ -22,6 +22,17 @@ def path_in(root,raw):
     if not p.is_relative_to(root.resolve()):raise ValueError('데이터 경로가 허용 범위를 벗어납니다.')
     return p
 
+def vlm_path_visible(path, modality):
+    """Expose only user-facing Images/Videos trees; JSON and annotation stay internal."""
+    if modality not in {'image','video','both'}:
+        return False
+    parts=Path(path).parts
+    if not parts:
+        return False
+    top=parts[0].lower()
+    allowed={'image','images'} if modality=='image' else {'video','videos'} if modality=='video' else {'image','images','video','videos'}
+    return top in allowed and not any(part.lower()=='annotation' or part.lower().endswith('_json') for part in parts)
+
 def sha(path):
     h=hashlib.sha256()
     with path.open('rb') as stream:
@@ -42,21 +53,24 @@ def inventory(root,kind,modality='both',classes=None):
             if indices:parts[indices[-1]]='labels'
             label=(dataset/Path(*parts)).with_suffix('.txt')
             if not label.is_file() or not label.resolve().is_relative_to(dataset):skipped+=1;continue
+            max_class_id=-1
             try:
                 for line in label.read_text(encoding='utf-8').splitlines():
                     if not line.strip():continue
                     bits=line.split()
                     if len(bits)!=5 or not bits[0].isascii() or not bits[0].isdigit():raise ValueError('YOLO label format')
-                    if classes and int(bits[0])>=len(classes):raise ValueError('YOLO class range')
+                    class_id=int(bits[0]);max_class_id=max(max_class_id,class_id)
                     values=[float(v) for v in bits[1:]]
                     if not all(math.isfinite(v) and 0<=v<=1 for v in values) or values[2]<=0 or values[3]<=0:raise ValueError('YOLO box range')
             except (ValueError,UnicodeError):skipped+=1;continue
-            key=p.resolve().relative_to(dataset).as_posix();records[key]=dict(path=key,label=label.relative_to(dataset).as_posix(),size=p.stat().st_size)
+            key=p.resolve().relative_to(dataset).as_posix();records[key]=dict(path=key,label=label.relative_to(dataset).as_posix(),size=p.stat().st_size,max_class_id=max_class_id)
     else:
         if modality not in {'image','video','both'}:raise ValueError('Invalid VLM modality')
         sys.path.insert(0,str(root/'VLM/scripts/data'));os.environ['DATASET_ROOT']=str(root/'Dataset')
         import vlm_dataset_utils as utils
         for p in sorted(dataset.rglob('*.json')):
+            # Data Studio review/workflow state is not a training annotation.
+            if p.name.endswith('.meta.json'):continue
             if not p.resolve().is_relative_to(dataset):continue
             try:samples=utils.load_json_samples(p)
             except (SystemExit,UnicodeError):skipped+=1;continue
@@ -70,7 +84,10 @@ def inventory(root,kind,modality='both',classes=None):
                 key=media.relative_to(dataset).as_posix();label=p.relative_to(dataset).as_posix()
                 if key in records:records[key]['labels'].append(label);continue
                 records[key]=dict(path=key,label=label,labels=[label],size=media.stat().st_size,row=row)
-    return dict(dataset_type=kind,root='/home/intellivix/train/Dataset/'+kind,folders=folders,records=list(records.values()),skipped=skipped)
+    if kind=='vlm':
+        folders=['.']+[folder for folder in folders if folder!='.' and vlm_path_visible(folder,modality)]
+        records={key:value for key,value in records.items() if vlm_path_visible(value['path'],modality)}
+    return dict(dataset_type=kind,root=str(root/'Dataset'/kind),folders=folders,records=list(records.values()),skipped=skipped)
 
 def in_folder(path,folder):return folder=='.' or path==folder or path.startswith(folder.rstrip('/')+'/')
 
@@ -88,6 +105,11 @@ def select(root,q):
         for p in exact:path_in(dataset,p)
         exact=set(exact)
     rows=[r for r in catalog['records'] if (r['path'] in exact if exact is not None else any(in_folder(r['path'],f) or any(in_folder(p,f) for p in r.get('labels',[r['label']])) for f in folders))]
+    classes=q.get('classes')
+    if kind=='detector' and isinstance(classes,list) and classes:
+        max_id=max((r.get('max_class_id',-1) for r in rows),default=-1)
+        if max_id>=len(classes):
+            raise ValueError(f'선택한 TXT 라벨의 최대 클래스 번호는 {max_id}입니다. 검출기 학습 클래스는 {len(classes)}개이므로 클래스 번호 0~{len(classes)-1}만 사용할 수 있습니다. 클래스명을 {max_id+1}개 이상 정의하세요.')
     source=q.get('source_manifest') or {};previous={k:set(source.get(k,[])) for k in ['train','valid','test']}
     selected={r['path'] for r in rows};splits={k:[] for k in previous};unassigned=[]
     for path in sorted(selected):
@@ -101,7 +123,7 @@ def select(root,q):
     if len(selected)>1 and not splits['valid'] and len(splits['train'])>1:splits['valid'].append(splits['train'].pop())
     if selected and not splits['train']:
         donor='valid' if splits['valid'] else 'test';splits['train'].append(splits[donor].pop())
-    public=[{k:v for k,v in r.items() if k!='row'} for r in rows]
+    public=[{k:v for k,v in r.items() if k not in {'row','max_class_id'}} for r in rows]
     return dict(dataset_type=kind,selected_folders=folders,selected_files=sorted(selected),train_files=splits['train'],valid_files=splits['valid'],test_files=splits['test'],source_node=source.get('source_node'),file_count=len(selected),skipped=catalog['skipped'],files=public,**splits),rows
 
 def prepare(root,q):
@@ -136,9 +158,9 @@ def bundle(root,q):
     manifest=json.loads((directory/'manifest.json').read_text())
     return directory,manifest
 
-def upload_file(path,uri,cookie):
+def upload_file(path,uri,cookie,allowed_netloc):
     parsed=urlparse(uri)
-    if parsed.scheme!='http' or parsed.netloc!='172.16.4.84:8081':raise ValueError('Invalid ClearML upload destination')
+    if parsed.scheme!='http' or parsed.netloc!=allowed_netloc:raise ValueError('Invalid ClearML upload destination')
     conn=http.client.HTTPConnection(parsed.hostname,parsed.port,timeout=180)
     boundary='mlops-'+uuid.uuid4().hex
     object_name=parsed.path.lstrip('/')
@@ -153,6 +175,8 @@ def upload_file(path,uri,cookie):
     conn.close()
 
 def upload(root,q):
+    files_host=q.get('files_host','');parsed_host=urlparse(files_host)
+    if parsed_host.scheme!='http' or not parsed_host.netloc:raise ValueError('Invalid ClearML files host')
     directory,manifest=bundle(root,q);kind=manifest['dataset_type'];id=q['node']['id']
     if not re.fullmatch('[a-f0-9]{32}',id):raise ValueError('Invalid dataset version ID')
     dataset=(root/'Dataset'/kind).resolve();archive=directory/'dataset.zip';entries=[]
@@ -168,10 +192,10 @@ def upload(root,q):
     (directory/'state.json').write_text(json.dumps(state,ensure_ascii=False))
     old={f['relative_path']:f.get('hash') for f in parent.get('dataset_file_entries',[])};new={f['relative_path']:f['hash'] for f in entries};changes=dict(ds_change_add=len(new.keys()-old.keys()),ds_change_remove=len(old.keys()-new.keys()),ds_change_modify=sum(new[k]!=old[k] for k in new.keys()&old.keys()),ds_change_size=state['total_size']-parent.get('total_size',0))
     struct=q.get('parent_struct',{}).copy();indices={v['job_id']:k for k,v in struct.items()};index=str(max([int(k) for k in struct] or [-1])+1);parentid=q['node'].get('parent_id');struct[index]=dict(job_id=id,status='completed',last_update=int(datetime.datetime.now().timestamp()),parents=[indices[parentid]] if parentid in indices else [],job_size=state['total_size'],name='Detector' if kind=='detector' else 'VLM',version=q['node']['version'])
-    prefix='http://172.16.4.84:8081/Dataset/.datasets/'+('Detector' if kind=='detector' else 'VLM')+'/'+('Detector' if kind=='detector' else 'VLM')+'.'+id+'/artifacts/'
+    prefix=files_host.rstrip('/')+'/Dataset/.datasets/'+('Detector' if kind=='detector' else 'VLM')+'/'+('Detector' if kind=='detector' else 'VLM')+'.'+id+'/artifacts/'
     artifacts=[]
     for key,name,type in [('data','dataset.zip','custom'),('state','state.json','dict'),('manifest','manifest.json','dict')]:
-        path=directory/name;uri=prefix+key+'/'+quote(name);upload_file(path,uri,q['cookie']);artifacts.append(dict(key=key,type=type,mode='output',uri=uri,hash=sha(path),content_size=path.stat().st_size,timestamp=int(datetime.datetime.now().timestamp()),type_data={'content_type':'application/zip' if key=='data' else 'application/json','preview':'MLOps Dataset '+key}))
+        path=directory/name;uri=prefix+key+'/'+quote(name);upload_file(path,uri,q['cookie'],parsed_host.netloc);artifacts.append(dict(key=key,type=type,mode='output',uri=uri,hash=sha(path),content_size=path.stat().st_size,timestamp=int(datetime.datetime.now().timestamp()),type_data={'content_type':'application/zip' if key=='data' else 'application/json','preview':'MLOps Dataset '+key}))
     size=archive.stat().st_size;archive.unlink()
     return dict(artifacts=artifacts,entries=entries,struct=struct,archive_size=size,changes=changes)
 

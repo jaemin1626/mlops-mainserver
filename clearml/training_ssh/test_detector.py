@@ -63,6 +63,14 @@ class DetectorTests(unittest.TestCase):
             jobs.run('test', ['ssh'])
         self.assertEqual(jobs.get('test')['status'], 'failed')
 
+    def test_start_generates_one_shared_training_name(self):
+        jobs = Jobs()
+        with patch('detector.ssh_command', return_value=['ssh']), patch.object(jobs, 'remote_running', return_value=False), patch('detector.threading.Thread'):
+            job = jobs.start({'type': 'detector'})
+        generated = job['params']['name']
+        self.assertRegex(generated, r'^detector_[0-9]{14}$')
+        self.assertIn('--name ' + generated, job['command'])
+
     def test_duplicate_and_bounded_logs(self):
         jobs = Jobs(); jobs.jobs['test'] = dict(id='test',status='running',logs='')
         with patch('detector.ssh_command', return_value=['ssh']), self.assertRaises(RuntimeError):
@@ -108,9 +116,9 @@ class ApiTests(unittest.TestCase):
         self.addCleanup(self.server.server_close); self.addCleanup(self.server.shutdown)
         self.url = f'http://127.0.0.1:{self.server.server_port}'
 
-    def request(self, path, params=None, origin='http://test'):
+    def request(self, path, params=None, origin='http://test', headers=None):
         req = urllib.request.Request(self.url+path, data=json.dumps(params).encode() if params is not None else None,
-                                     headers={'Origin':origin,'Content-Type':'application/json'})
+                                     headers={'Origin':origin,'Content-Type':'application/json',**(headers or {})})
         try:
             response = urllib.request.urlopen(req)
         except urllib.error.HTTPError as exc:

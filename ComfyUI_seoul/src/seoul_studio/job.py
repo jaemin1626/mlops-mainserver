@@ -1,3 +1,4 @@
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -11,9 +12,24 @@ from seoul_studio.presets import (
     resolution_options,
 )
 
+_UNSAFE_FILENAME_RE = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+MAX_OUTPUT_NAME_LENGTH = 80
+
 
 class JobValidationError(ValueError):
     pass
+
+
+def sanitize_output_name(raw: object) -> Optional[str]:
+    """사용자가 입력한 파일명을 파일 시스템에 안전한 형태로 정리한다. 비어 있으면 None."""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    text = _UNSAFE_FILENAME_RE.sub("_", text)
+    text = re.sub(r"\s+", " ", text).strip(" .")
+    if not text:
+        return None
+    return text[:MAX_OUTPUT_NAME_LENGTH]
 
 
 @dataclass
@@ -30,6 +46,7 @@ class JobRequest:
     fps: int = FPS
     image_path: Optional[str] = None
     negative_prompt: str = ""
+    output_name: Optional[str] = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -95,4 +112,5 @@ def parse_job(payload: dict[str, Any]) -> JobRequest:
         fps=FPS,
         image_path=image_path,
         negative_prompt=str(payload.get("negative_prompt", "") or ""),
+        output_name=sanitize_output_name(payload.get("output_name")),
     )

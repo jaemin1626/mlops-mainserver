@@ -662,6 +662,7 @@
     var timestamp = number(data.updated_at) || number(data.timestamp);
     var stale = !timestamp || Date.now()/1000 - timestamp > 20;
     var live = data.ok === true && !stale;
+    banner.querySelector('#ivx-training-host').textContent = 'TRAINING SERVER' + (data.host ? ' · ' + data.host : '');
     var status = banner.querySelector('#ivx-training-status');
     status.textContent = live ? 'LIVE · 5초마다 갱신' : (data.ok === false ? '연결 실패' : '데이터 지연');
     status.style.color = live ? '#8ee0b1' : '#ff9b9b';
@@ -726,7 +727,7 @@
       panel.innerHTML='<h2>TRAINING SERVER METRICS</h2><div class="ivx-metric-grid">'+gpuCard()+card('CPU usage','cpu')+card('Memory usage','memory')+'</div>';
       tasks.parentNode.insertBefore(panel,tasks);
       banner=document.createElement('header');banner.id='ivx-training-banner';
-      banner.innerHTML='<strong>TRAINING SERVER · 172.16.4.83</strong><span id="ivx-training-status">연결 확인 중</span><div id="ivx-training-detail">학습 서버 응답 대기 중</div>';
+      banner.innerHTML='<strong id="ivx-training-host">TRAINING SERVER</strong><span id="ivx-training-status">연결 확인 중</span><div id="ivx-training-detail">학습 서버 응답 대기 중</div>';
       document.body.prepend(banner);document.body.classList.add('ivx-monitor-active');
       clearInterval(timer);poll();timer=setInterval(poll,5000);
     }

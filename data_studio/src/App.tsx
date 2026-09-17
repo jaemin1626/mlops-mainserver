@@ -1,12 +1,13 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import ServerFolderPicker from './components/ServerFolderPicker';
 import YoloShortcutsModal from './components/YoloShortcutsModal';
-import type { YoloLaunchRequest } from './dashboardTypes';
+import type { VlmLaunchRequest, YoloLaunchRequest } from './dashboardTypes';
 import Dashboard from './modes/Dashboard';
 import LandmarkWorkspace from './modes/LandmarkWorkspace';
 import OcrLabelWorkspace from './modes/OcrLabelWorkspace';
 import PolygonWorkspace from './modes/PolygonWorkspace';
 import VlmWorkspace from './modes/VlmWorkspace';
+import { resolveLabelAccess, type LabelAccess } from './accessControl';
 import YoloWorkspace from './modes/YoloWorkspace';
 
 export type AppMode = 'home' | 'yolo' | 'vlm' | 'polygon' | 'landmark' | 'ocr';
@@ -14,8 +15,21 @@ export type AppMode = 'home' | 'yolo' | 'vlm' | 'polygon' | 'landmark' | 'ocr';
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>('home');
   const [yoloLaunch, setYoloLaunch] = useState<YoloLaunchRequest | null>(null);
+  const [vlmLaunch, setVlmLaunch] = useState<VlmLaunchRequest | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const isWeb = window.__DATA_STUDIO_WEB__ === true;
+  const [labelAccess, setLabelAccess] = useState<LabelAccess>({ role: isWeb ? 'viewer' : 'worker', roles: [isWeb ? 'viewer' : 'worker'], userName: '', loaded: !isWeb });
+  useEffect(() => {
+    if (!isWeb) return;
+    fetch('/access-api/auth/me', { credentials: 'same-origin', cache: 'no-store' })
+      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then((me) => setLabelAccess(resolveLabelAccess(me)))
+      .catch(() => setLabelAccess({ role: 'viewer', roles: ['viewer'], userName: '', loaded: true }));
+  }, [isWeb]);
+
+  const handleAccessRoleChange = useCallback((role: LabelAccess['role']) => {
+    setLabelAccess((current) => current.roles.includes(role) ? { ...current, role } : current);
+  }, []);
 
   const handleOpenYoloFromDashboard = useCallback((request: YoloLaunchRequest) => {
     setYoloLaunch(request);
@@ -24,6 +38,15 @@ const App: React.FC = () => {
 
   const handleYoloLaunchConsumed = useCallback(() => {
     setYoloLaunch(null);
+  }, []);
+
+  const handleOpenVlmFromDashboard = useCallback((request: VlmLaunchRequest) => {
+    setVlmLaunch(request);
+    setMode('vlm');
+  }, []);
+
+  const handleVlmLaunchConsumed = useCallback(() => {
+    setVlmLaunch(null);
   }, []);
 
   return (
@@ -50,7 +73,7 @@ const App: React.FC = () => {
             onClick={() => setMode('yolo')}
             className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all ${mode === 'yolo' ? 'bg-[var(--accent-lime)] text-[#1A1A2E] shadow-[0_0_16px_rgba(168,230,27,0.35)]' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
           >
-            YOLO 라벨
+            Detector
           </button>
           <button
             type="button"
@@ -112,11 +135,11 @@ const App: React.FC = () => {
 
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {mode === 'home' ? (
-          <Dashboard onOpenYolo={handleOpenYoloFromDashboard} />
+          <Dashboard accessRole={labelAccess.role} availableRoles={labelAccess.roles} onAccessRoleChange={handleAccessRoleChange} workflowUser={labelAccess.userName} onOpenYolo={handleOpenYoloFromDashboard} onOpenVlm={handleOpenVlmFromDashboard} />
         ) : mode === 'yolo' ? (
-          <YoloWorkspace launchRequest={yoloLaunch} onLaunchConsumed={handleYoloLaunchConsumed} />
+          <YoloWorkspace accessRole={labelAccess.role} workflowUser={labelAccess.userName} launchRequest={yoloLaunch} onLaunchConsumed={handleYoloLaunchConsumed} />
         ) : mode === 'vlm' ? (
-          <VlmWorkspace />
+          <VlmWorkspace accessRole={labelAccess.role} workflowUser={labelAccess.userName} launchRequest={vlmLaunch} onLaunchConsumed={handleVlmLaunchConsumed} />
         ) : mode === 'polygon' ? (
           <PolygonWorkspace />
         ) : mode === 'landmark' ? (

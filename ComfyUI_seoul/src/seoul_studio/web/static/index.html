@@ -16,8 +16,8 @@
         <span class="brand-title">Intellivix Video Studio</span>
       </div>
       <div class="mode-tabs" role="tablist" aria-label="화면">
-        <button type="button" id="tab-create" class="mode-tab is-active" role="tab" aria-selected="true" data-view="create">이미지 → 영상</button>
-        <button type="button" id="tab-library" class="mode-tab" role="tab" aria-selected="false" data-view="library">저장 폴더</button>
+        <button type="button" id="tab-library" class="mode-tab is-active" role="tab" aria-selected="true" data-view="library">브라우저</button>
+        <button type="button" id="tab-create" class="mode-tab" role="tab" aria-selected="false" data-view="create">이미지 → 영상</button>
       </div>
       <div class="header-spacer"></div>
       <p id="status" class="status-pill" aria-live="polite">준비됨</p>
@@ -26,7 +26,7 @@
       </div>
     </header>
 
-    <main id="view-create" class="app-main app-view">
+    <main id="view-create" class="app-main app-view" hidden>
       <section class="panel glass-card">
         <div class="panel-head">
           <h2>입력</h2>
@@ -85,6 +85,12 @@
           </div>
         </div>
 
+        <div class="field" id="field-output-name">
+          <label class="field-label" for="output-name">파일명 <span class="optional">(선택)</span></label>
+          <input id="output-name" type="text" placeholder="비워두면 자동으로 이름이 정해집니다" maxlength="80">
+          <p class="hint">여러 개를 반복 생성하면 같은 이름 뒤에 번호가 붙습니다.</p>
+        </div>
+
         <div class="panel-actions">
           <button type="button" id="toggle-advanced" class="btn btn-ghost btn-block">고급 설정</button>
           <p id="save-location-hint" class="save-location-hint">저장 위치: generate_datasets</p>
@@ -111,46 +117,84 @@
       </section>
     </main>
 
-    <section id="view-library" class="library-view app-view" hidden>
-      <div class="panel glass-card library-panel">
-        <div class="panel-head library-head">
-          <div>
-            <h2>저장 폴더</h2>
-            <p class="hint">저장된 영상을 폴더별로 확인합니다. 저장 위치 변경은 <strong>연결 설정</strong>에서 하세요.</p>
+    <section id="view-library" class="library-view app-view">
+      <div class="library-layout">
+        <aside id="library-tree-sidebar" class="library-tree-sidebar glass-card" aria-label="폴더 트리">
+          <div class="library-tree-head">
+            <h3>폴더</h3>
+            <button type="button" id="refresh-library-tree" class="btn btn-ghost btn-sm" title="트리 새로고침">↻</button>
           </div>
-          <div class="library-head-actions">
-            <button type="button" id="clear-library-folder" class="btn btn-ghost btn-danger-text">현재 폴더 비우기</button>
-            <button type="button" id="refresh-library" class="btn btn-secondary">새로고침</button>
+          <div id="library-tree" class="library-tree" role="tree"></div>
+        </aside>
+        <div class="panel glass-card library-panel">
+          <div class="panel-head library-head">
+            <div>
+              <h2>브라우저</h2>
+              <p class="hint">저장된 영상을 폴더별로 확인합니다. 저장 위치 변경은 <strong>연결 설정</strong>에서 하세요.</p>
+            </div>
+            <div class="library-head-actions">
+              <button type="button" id="clear-library-folder" class="btn btn-ghost btn-danger-text">현재 폴더 비우기</button>
+              <button type="button" id="refresh-library" class="btn btn-secondary">새로고침</button>
+            </div>
           </div>
+          <div class="library-paths">
+            <div class="library-path-row">
+              <span class="library-path-label">현재</span>
+              <code id="library-current-path">generate_datasets</code>
+            </div>
+            <div class="library-path-row">
+              <span class="library-path-label">호스트</span>
+              <code id="library-host-output-dir">—</code>
+            </div>
+          </div>
+          <nav id="library-breadcrumb" class="folder-breadcrumb" aria-label="폴더 경로"></nav>
+          <div class="library-filter-bar" role="group" aria-label="영상 필터">
+            <span class="library-filter-label">표시</span>
+            <div class="library-filter-cards">
+              <label class="library-filter-card">
+                <input type="radio" name="library-media-filter" value="anonymized">
+                <span>비식별화</span>
+              </label>
+              <label class="library-filter-card">
+                <input type="radio" name="library-media-filter" value="original">
+                <span>원본</span>
+              </label>
+              <label class="library-filter-card">
+                <input type="radio" name="library-media-filter" value="all" checked>
+                <span>전체</span>
+              </label>
+            </div>
+          </div>
+          <div id="export-anony-notice" class="library-anony-notice" hidden>
+            <strong>비식별화 안내</strong>
+            <span>처리된 영상은 현재 폴더의 <code>Anony/</code> 하위에 저장됩니다.</span>
+          </div>
+          <div id="export-progress-wrap" class="job-progress-wrap" hidden>
+            <p id="export-progress-status" class="job-progress-status">준비 중…</p>
+            <p id="export-progress-step" class="job-progress-step"></p>
+            <div class="job-progress-track" aria-hidden="true">
+              <div id="export-progress-bar" class="job-progress-bar is-indeterminate"></div>
+            </div>
+            <p id="export-progress-detail" class="job-progress-detail"></p>
+          </div>
+          <p class="library-view-note">비식별화 영상은 <code>Anony/</code> 폴더에 저장됩니다. 왼쪽 트리에서 폴더를 선택하세요.</p>
+          <div id="library-bulk-bar" class="library-bulk-bar" hidden>
+            <label class="library-select-all">
+              <input id="library-select-all" type="checkbox">
+              <span>전체 선택</span>
+            </label>
+            <span id="library-selected-count" class="library-selected-count">0개 선택</span>
+            <div class="library-bulk-actions">
+              <button type="button" id="library-bulk-send" class="btn btn-secondary btn-sm" disabled>작업으로 보내기(+비식별화)</button>
+              <button type="button" id="library-bulk-download" class="btn btn-secondary btn-sm" disabled>선택 다운로드</button>
+              <button type="button" id="library-bulk-delete" class="btn btn-ghost btn-sm btn-danger-text" disabled>선택 삭제</button>
+            </div>
+          </div>
+          <ul id="library-subfolders" class="library-subfolders"></ul>
+          <ul id="library-list" class="library-list">
+            <li id="library-empty" class="library-empty">브라우저에 표시할 영상이 없습니다.</li>
+          </ul>
         </div>
-        <div class="library-paths">
-          <div class="library-path-row">
-            <span class="library-path-label">현재</span>
-            <code id="library-current-path">generate_datasets</code>
-          </div>
-          <div class="library-path-row">
-            <span class="library-path-label">호스트</span>
-            <code id="library-host-output-dir">—</code>
-          </div>
-        </div>
-        <nav id="library-breadcrumb" class="folder-breadcrumb" aria-label="폴더 경로"></nav>
-        <p class="library-view-note">영상은 현재 폴더에 직접 있는 파일만 표시됩니다. 하위 폴더 안 영상은 해당 폴더로 들어가세요.</p>
-        <div id="library-bulk-bar" class="library-bulk-bar" hidden>
-          <label class="library-select-all">
-            <input id="library-select-all" type="checkbox">
-            <span>전체 선택</span>
-          </label>
-          <span id="library-selected-count" class="library-selected-count">0개 선택</span>
-          <div class="library-bulk-actions">
-            <button type="button" id="library-bulk-send" class="btn btn-secondary btn-sm" disabled>작업으로 보내기</button>
-            <button type="button" id="library-bulk-download" class="btn btn-secondary btn-sm" disabled>선택 다운로드</button>
-            <button type="button" id="library-bulk-delete" class="btn btn-ghost btn-sm btn-danger-text" disabled>선택 삭제</button>
-          </div>
-        </div>
-        <ul id="library-subfolders" class="library-subfolders"></ul>
-        <ul id="library-list" class="library-list">
-          <li id="library-empty" class="library-empty">저장 폴더에 영상이 없습니다.</li>
-        </ul>
       </div>
     </section>
 
@@ -204,13 +248,32 @@
     <div id="send-to-task-modal" class="send-to-task-modal" hidden role="dialog" aria-modal="true" aria-labelledby="send-to-task-title">
       <div class="send-to-task-panel glass-card">
         <h2 id="send-to-task-title">작업으로 보내기</h2>
-        <p id="send-to-task-summary" class="hint send-to-task-summary">선택한 영상을 YOLO 또는 VLM 작업 폴더로 보냅니다.</p>
+        <p id="send-to-task-summary" class="hint send-to-task-summary">선택한 영상을 작업 폴더로 보내거나 브라우저에 비식별화본을 보관합니다.</p>
+
+        <fieldset class="send-to-task-fieldset">
+          <legend class="field-label">동작</legend>
+          <label class="radio-row">
+            <input type="radio" name="export-action" value="send" checked>
+            <span>작업으로 보내기</span>
+          </label>
+          <label class="radio-row">
+            <input type="radio" name="export-action" value="archive">
+            <span>비식별화만 (브라우저 보관)</span>
+          </label>
+        </fieldset>
+
+        <div id="send-export-section">
+          <div class="field">
+            <label class="field-label" for="send-folder-name">저장 폴더명</label>
+            <input id="send-folder-name" type="text" maxlength="120" placeholder="예: smoking_001">
+          </div>
+        </div>
 
         <fieldset class="send-to-task-fieldset">
           <legend class="field-label">대상</legend>
           <label class="radio-row">
-            <input type="radio" name="send-target" value="yolo" checked>
-            <span>YOLO (detector)</span>
+            <input type="radio" name="send-target" value="detector" checked>
+            <span>Detector</span>
           </label>
           <label class="radio-row">
             <input type="radio" name="send-target" value="vlm">
@@ -240,9 +303,9 @@
           <details class="send-help-details">
             <summary>처음 사용할 때 체크리스트</summary>
             <ul>
-              <li>YOLO는 이미지만 보낼 수 있습니다.</li>
+              <li>Detector는 이미지만 보낼 수 있습니다.</li>
               <li>VLM은 이미지 또는 영상을 선택할 수 있습니다.</li>
-              <li>이미지는 <code>generated/영상이름/</code> 폴더에 저장됩니다.</li>
+              <li>이미지는 <code>generate/&lt;저장 폴더명&gt;/&lt;영상명&gt;/</code> 에 저장됩니다.</li>
             </ul>
           </details>
           <div class="field">
@@ -251,11 +314,25 @@
           </div>
         </div>
 
-        <p id="send-dest-hint" class="hint send-dest-hint">저장 위치: detector/generated</p>
+        <p id="send-dest-hint" class="hint send-dest-hint">저장 위치: vlm/generate/&lt;폴더명&gt;/&lt;영상명&gt;/</p>
+
+        <fieldset id="export-anonymize-section" class="export-anonymize-section">
+          <legend class="export-anonymize-legend">비식별화</legend>
+          <label class="export-anonymize-check">
+            <input id="export-anonymize" type="checkbox" checked>
+            <span class="export-anonymize-check-label">비식별화 적용 (안면·번호판 블러)</span>
+          </label>
+          <p class="export-anonymize-desc">Detector 프레임 추출·영상 보내기·보관 시 블러 처리합니다. 이미 <code>Anony/</code>에 비식별화본이 있으면 우선 사용합니다.</p>
+          <div id="export-anonymize-classes" class="anonymize-class-buttons" role="group" aria-label="비식별화 대상">
+            <button type="button" id="export-class-face" class="btn btn-secondary anonymize-class-btn is-selected" data-class-id="2" aria-pressed="true">안면</button>
+            <button type="button" id="export-class-plate" class="btn btn-secondary anonymize-class-btn is-selected" data-class-id="5" aria-pressed="true">번호판</button>
+          </div>
+          <p id="export-class-hint" class="export-anonymize-hint">하나 이상 선택하세요.</p>
+        </fieldset>
 
         <div class="send-to-task-actions">
           <button type="button" id="send-to-task-cancel" class="btn btn-ghost">취소</button>
-          <button type="button" id="send-to-task-confirm" class="btn btn-primary">보내기</button>
+          <button type="button" id="send-to-task-confirm" class="btn btn-primary">시작</button>
         </div>
       </div>
     </div>

@@ -9,6 +9,7 @@ const {
 } = require('./pathGuard');
 const { vlmJsonPathForMediaPath } = require('./vlmJsonPaths');
 const { scanYoloDashboard } = require('../shared/yoloDashboardScan');
+const { scanVlmDashboard } = require('../shared/vlmDashboardScan');
 
 const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp']);
 const VIDEO_EXT = new Set(['.mp4', '.webm', '.mov', '.mkv']);
@@ -24,6 +25,11 @@ const MIME_BY_EXT = {
   '.mkv': 'video/x-matroska',
 };
 const SKIP = new Set(['.git', 'node_modules', '.venv', 'venv', '__pycache__', '.idea', '.vscode']);
+const INTERNAL_DATASET_DIR = /(?:_json$)|(?:^annotation$)/i;
+
+function isVisibleEntry(entry) {
+  return !SKIP.has(entry.name) && !entry.name.startsWith('.') && !(entry.isDirectory() && INTERNAL_DATASET_DIR.test(entry.name));
+}
 
 function createFsRouter() {
   const router = express.Router();
@@ -49,7 +55,7 @@ function createFsRouter() {
       return res.status(404).json({ error: 'not found' });
     }
     const out = entries
-      .filter((e) => !SKIP.has(e.name) && !e.name.startsWith('.'))
+      .filter(isVisibleEntry)
       .map((e) => ({
         name: e.name,
         path: path.join(safe.path, e.name),
@@ -178,6 +184,27 @@ function createFsRouter() {
     }
   });
 
+  router.get('/dashboard/vlm-summary', (req, res) => {
+    const rootParam = String(req.query.root || '/data/datasets/vlm').trim();
+    const safe = resolveSafePath(roots(), rootParam);
+    if (!safe.ok) return res.status(safe.status).json({ error: safe.error });
+    let stat;
+    try {
+      stat = fs.statSync(safe.path);
+    } catch {
+      return res.status(404).json({ error: 'not found' });
+    }
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ error: 'root must be a directory' });
+    }
+    try {
+      const summary = scanVlmDashboard(safe.path);
+      res.json(summary);
+    } catch (err) {
+      res.status(500).json({ error: (err && err.message) || 'scan failed' });
+    }
+  });
+
   router.put('/fs/file', express.json({ limit: '5mb' }), (req, res) => {
     if (typeof req.body?.path !== 'string' || req.body.path.trim().length === 0) {
       return res.status(400).json({ error: 'path required' });
@@ -201,4 +228,4 @@ function createFsRouter() {
   return router;
 }
 
-module.exports = { createFsRouter };
+module.exports = { createFsRouter, isVisibleEntry };

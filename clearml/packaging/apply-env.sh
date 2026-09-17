@@ -96,8 +96,13 @@ ok "파생 값 반영 완료 (자격증명은 그대로)"
 
 if [ "$DO_RESTART" = 1 ]; then
     step "스택 재기동"
-    (cd "$CLEARML_DIR" && ./compose.sh up -d --no-build)
+    # --profile training-ssh 없이는 annotation-api/training-metrics/training-ssh 컨테이너가
+    # 재생성 대상에서 빠져서, .env 값을 바꿔도 그 컨테이너들엔 반영되지 않는다.
+    (cd "$CLEARML_DIR" && ./compose.sh --profile training-ssh up -d --no-build)
     (cd "$CLEARML_DIR" && ./monitoring-compose.sh up -d --force-recreate --no-build)
+    # nginx가 컨테이너 이름을 재기동 시점의 IP로 캐싱하므로, 재기동 뒤에는 항상 reload로
+    # 최신 IP를 다시 조회하게 한다 (default.d/*.conf 쪽도 resolver를 쓰지만 안전하게 한 번 더).
+    docker exec clearml-webserver nginx -s reload 2>/dev/null || true
     ok "완료"
 else
     echo "  재기동: packaging/apply-env.sh --restart"
