@@ -42,7 +42,7 @@ def command(args, env=os.environ):
 
 
 def ssh_command(remote, env=os.environ):
-    host = env.get('TRAINING_SSH_HOST', '172.16.4.83')
+    host = env.get('TRAINING_SSH_HOST') or env.get('TRAINING_SERVER_IP', '')
     user = env.get('TRAINING_SSH_USER', 'intellivix')
     port = env.get('TRAINING_SSH_PORT', '22')
     if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._:-]*', host):

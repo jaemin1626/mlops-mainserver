@@ -10,7 +10,22 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
+
+SAFE_VALUE = re.compile(r"[A-Za-z0-9_./:@%+,=~^-]*")
+
+
+def quote_value(value: str) -> str:
+    """셸에서 source 해도 깨지지 않도록, 공백·특수문자가 있는 값만 따옴표로 감싼다."""
+    if SAFE_VALUE.fullmatch(value):
+        return value
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value  # 이미 따옴표로 감싼 값
+    if "'" not in value:
+        return f"'{value}'"
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+    return f'"{escaped}"'
 
 
 def main() -> int:
@@ -45,7 +60,7 @@ def main() -> int:
         elif key in seen:
             continue  # 같은 키가 여러 번 있으면 첫 줄만 남긴다
         else:
-            out.append(f"{key}={updates[key]}\n")
+            out.append(f"{key}={quote_value(updates[key])}\n")
             seen.add(key)
 
     missing = [k for k in updates if k not in seen]
@@ -53,7 +68,7 @@ def main() -> int:
         if out and not out[-1].endswith("\n"):
             out.append("\n")
         for key in missing:
-            out.append(f"{key}={updates[key]}\n")
+            out.append(f"{key}={quote_value(updates[key])}\n")
 
     with open(path, "w", encoding="utf-8") as fh:
         fh.writelines(out)

@@ -10,7 +10,7 @@ services:
         TRAINING_SSH_UID: ${TRAINING_SSH_UID:-1000}
         TRAINING_SSH_GID: ${TRAINING_SSH_GID:-1000}
     environment:
-      TRAINING_SSH_HOST: ${TRAINING_SSH_HOST:-172.16.4.83}
+      TRAINING_SSH_HOST: ${TRAINING_SSH_HOST:-${TRAINING_SERVER_IP:-}}
       TRAINING_SSH_PORT: ${TRAINING_SSH_PORT:-22}
       TRAINING_SSH_USER: ${TRAINING_SSH_USER:-intellivix}
       TRAINING_SSH_ROOT: ${TRAINING_SSH_ROOT:-/home/intellivix/train}
@@ -20,7 +20,7 @@ services:
       TRAINING_SSH_KNOWN_HOSTS: /run/training-ssh/known_hosts
     volumes:
       - type: bind
-        source: ${TRAINING_SSH_DIR:-/opt/clearml/ssh}
+        source: ${TRAINING_SSH_DIR:-./ssh}
         target: /run/training-ssh
         read_only: true
         bind:
@@ -45,8 +45,8 @@ services:
       CLEARML_MONGODB_SERVICE_HOST: mongo
       CLEARML_MONGODB_SERVICE_PORT: "27017"
     volumes:
-      - /opt/clearml/access_control/data:/data
-      - /opt/clearml/config:/config
+      - ${CLEARML_DIR_PATH:-/opt/clearml}/access_control/data:/data
+      - ${CLEARML_DIR_PATH:-/opt/clearml}/config:/config
     depends_on:
       - apiserver
     # backend: mongo에 직접 붙어 새 계정의 ClearML 프로필(backend.user)을
@@ -63,9 +63,9 @@ services:
     image: clearml-apiserver-intellivix:2.3.0-705
     restart: unless-stopped
     volumes:
-    - /opt/clearml/logs:/var/log/clearml
-    - /opt/clearml/config:/opt/clearml/config
-    - /opt/clearml/data/fileserver:/mnt/fileserver
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/logs:/var/log/clearml
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/config:/opt/clearml/config
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/data/fileserver:/mnt/fileserver
     depends_on:
       - redis
       - mongo
@@ -123,7 +123,7 @@ services:
     image: elasticsearch:8.17.0
     restart: unless-stopped
     volumes:
-      - /opt/clearml/data/elastic_7:/usr/share/elasticsearch/data
+      - ${CLEARML_DIR_PATH:-/opt/clearml}/data/elastic_7:/usr/share/elasticsearch/data
       - /usr/share/elasticsearch/logs
 
   fileserver:
@@ -139,9 +139,9 @@ services:
       CLEARML__secure__auth__token_secret: ${CLEARML_TOKEN_SECRET:?packaging/gen-secrets.sh 를 먼저 실행하세요}
     restart: unless-stopped
     volumes:
-    - /opt/clearml/logs:/var/log/clearml
-    - /opt/clearml/data/fileserver:/mnt/fileserver
-    - /opt/clearml/config:/opt/clearml/config
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/logs:/var/log/clearml
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/data/fileserver:/mnt/fileserver
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/config:/opt/clearml/config
     ports:
     - "8081:8081"
 
@@ -153,8 +153,8 @@ services:
     restart: unless-stopped
     command: --setParameter internalQueryMaxBlockingSortMemoryUsageBytes=196100200
     volumes:
-    - /opt/clearml/data/mongo_4/db:/data/db
-    - /opt/clearml/data/mongo_4/configdb:/data/configdb
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/data/mongo_4/db:/data/db
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/data/mongo_4/configdb:/data/configdb
 
   redis:
     networks:
@@ -163,7 +163,7 @@ services:
     image: redis:7.4.1
     restart: unless-stopped
     volumes:
-    - /opt/clearml/data/redis:/data
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/data/redis:/data
 
   webserver:
     command:
@@ -173,26 +173,26 @@ services:
     # 갱신: packaging/build-webserver-image.sh → compose up --force-recreate webserver
     image: clearml-webserver-intellivix:20260825
     build:
-      context: /opt/clearml
+      context: ${CLEARML_DIR_PATH:-/opt/clearml}
       dockerfile: branding/Dockerfile.webserver
     restart: unless-stopped
     # nginx 설정·index.html 은 자주 바꾸므로 mount (JS/CSS 등 자산은 이미지에 포함)
     volumes:
-    - /opt/clearml/nginx/default.d:/etc/nginx/default.d:ro
-    - /opt/clearml/branding/index.html:/usr/share/nginx/html/index.html:ro
-    - /opt/clearml/branding/admin-embedded.html:/usr/share/nginx/html/admin-embedded.html:ro
-    - /opt/clearml/branding/access-login.html:/usr/share/nginx/html/access-login.html:ro
-    - /opt/clearml/branding/change-password.html:/usr/share/nginx/html/change-password.html:ro
-    - /opt/clearml/branding/env.js:/usr/share/nginx/html/env.js:ro
-    - /opt/clearml/branding/ivx-sidebar.css:/usr/share/nginx/html/ivx-sidebar.css:ro
-    - /opt/clearml/branding/ivx-sidebar.js:/usr/share/nginx/html/ivx-sidebar.js:ro
-    - /opt/clearml/branding/ivx-admin-app.js:/usr/share/nginx/html/ivx-admin-app.js:ro
-    - /opt/clearml/branding/ivx-dataset-branch.css:/usr/share/nginx/html/ivx-dataset-branch.css:ro
-    - /opt/clearml/branding/ivx-dataset-branch.js:/usr/share/nginx/html/ivx-dataset-branch.js:ro
-    - /opt/clearml/branding/train:/usr/share/nginx/html/train:ro
-    - /opt/clearml/branding/ivx-dashboard.js:/usr/share/nginx/html/ivx-dashboard.js:ro
-    - /opt/clearml/branding/training-metrics.json:/usr/share/nginx/html/training-metrics.json:ro
-    - /opt/clearml/branding/training-dashboard.html:/usr/share/nginx/html/training-dashboard.html:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/nginx/default.d:/etc/nginx/default.d:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/index.html:/usr/share/nginx/html/index.html:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/admin-embedded.html:/usr/share/nginx/html/admin-embedded.html:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/access-login.html:/usr/share/nginx/html/access-login.html:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/change-password.html:/usr/share/nginx/html/change-password.html:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/env.js:/usr/share/nginx/html/env.js:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/ivx-sidebar.css:/usr/share/nginx/html/ivx-sidebar.css:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/ivx-sidebar.js:/usr/share/nginx/html/ivx-sidebar.js:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/ivx-admin-app.js:/usr/share/nginx/html/ivx-admin-app.js:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/ivx-dataset-branch.css:/usr/share/nginx/html/ivx-dataset-branch.css:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/ivx-dataset-branch.js:/usr/share/nginx/html/ivx-dataset-branch.js:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/train:/usr/share/nginx/html/train:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/ivx-dashboard.js:/usr/share/nginx/html/ivx-dashboard.js:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/training-metrics.json:/usr/share/nginx/html/training-metrics.json:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/training-dashboard.html:/usr/share/nginx/html/training-dashboard.html:ro
     depends_on:
       - apiserver
       - data-studio
@@ -207,7 +207,7 @@ services:
   data-studio:
     image: clearml-data-studio:pin-20260826-v4
     build:
-      context: /opt/data_studio
+      context: ${MLOPS_ROOT:-/opt}/data_studio
       dockerfile: Dockerfile
     container_name: clearml-data-studio
     restart: unless-stopped
@@ -216,7 +216,7 @@ services:
       DATA_STUDIO_ALLOWED_ROOTS: /data/datasets:/data/generate_datasets
       ACCESS_CONTROL_URL: http://access-control:8095
     volumes:
-      - ${DATASET_EXPORT_PATH:-/opt/clearml/data/datasets}:/data/datasets
+      - ${DATASET_EXPORT_PATH:-./data/datasets}:/data/datasets
       - ${GENERATED_EXPORT_PATH:-/home/intellivix/train/ComfyUI/generate_datasets}:/data/generate_datasets
     depends_on: [access-control]
     networks:
@@ -225,7 +225,7 @@ services:
   seoul-studio:
     image: clearml-seoul-studio:pin-20260903-v1
     build:
-      context: /opt/ComfyUI_seoul
+      context: ${MLOPS_ROOT:-/opt}/ComfyUI_seoul
       dockerfile: Dockerfile
     container_name: clearml-seoul-studio
     restart: unless-stopped
@@ -246,9 +246,9 @@ services:
       CLEARML_API_SECRET_KEY: ${CLEARML_AGENT_SECRET_KEY:-${CLEARML_SECRET_KEY:-}}
     volumes:
       - ${GENERATED_EXPORT_PATH:-/home/intellivix/train/ComfyUI/generate_datasets}:/data/output
-      - ${DATASET_EXPORT_PATH:-/opt/clearml/data/datasets}:/data/datasets
-      - ${SEOUL_STUDIO_CONFIG_PATH:-/opt/ComfyUI_seoul/data/config}:/data/config
-      - ${BLUR_WEIGHTS_DIR:-/opt/clearml/models/anonymize}:/data/models/anonymize:ro
+      - ${DATASET_EXPORT_PATH:-./data/datasets}:/data/datasets
+      - ${SEOUL_STUDIO_CONFIG_PATH:-../ComfyUI_seoul/data/config}:/data/config
+      - ${BLUR_WEIGHTS_DIR:-./models/anonymize}:/data/models/anonymize:ro
     depends_on: [access-control]
     networks:
       - frontend
@@ -265,7 +265,7 @@ services:
       ANNOTATION_ALLOWED_ORIGIN: http://${CLEARML_SERVER_IP}:8080
       TRAINING_ANNOTATION_DIR: ${TRAINING_ANNOTATION_DIR:-/home/intellivix/train/Detector/annotation}
       TRAINING_IMAGE_ROOT: ${TRAINING_IMAGE_ROOT:-/workspace/Dataset/detector}
-      TRAINING_SSH_HOST: ${TRAINING_SSH_HOST:-172.16.4.83}
+      TRAINING_SSH_HOST: ${TRAINING_SSH_HOST:-${TRAINING_SERVER_IP:-}}
       TRAINING_SSH_PORT: ${TRAINING_SSH_PORT:-22}
       TRAINING_SSH_USER: ${TRAINING_SSH_USER:-intellivix}
       TRAINING_SSH_ROOT: ${TRAINING_SSH_ROOT:-/home/intellivix/train}
@@ -277,9 +277,9 @@ services:
       TRAINING_SSH_KEY_FILE: /run/keys/id_ed25519
       TRAINING_SSH_KNOWN_HOSTS: /run/keys/known_hosts
     volumes:
-      - /opt/clearml/ssh:/run/keys:ro
-      - /opt/clearml/data/datasets/detector:/data/datasets/detector:ro
-      - /opt/clearml/training_ssh/data:/data/deploy
+      - ${CLEARML_DIR_PATH:-/opt/clearml}/ssh:/run/keys:ro
+      - ${CLEARML_DIR_PATH:-/opt/clearml}/data/datasets/detector:/data/datasets/detector:ro
+      - ${CLEARML_DIR_PATH:-/opt/clearml}/training_ssh/data:/data/deploy
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
@@ -295,7 +295,7 @@ services:
     command: ["/app/metrics_poller.py"]
     restart: unless-stopped
     environment:
-      TRAINING_SSH_HOST: ${TRAINING_SSH_HOST:-172.16.4.83}
+      TRAINING_SSH_HOST: ${TRAINING_SSH_HOST:-${TRAINING_SERVER_IP:-}}
       TRAINING_SSH_USER: ${TRAINING_SSH_USER:-intellivix}
       TRAINING_SSH_PORT: ${TRAINING_SSH_PORT:-22}
       TRAINING_SSH_ROOT: ${TRAINING_SSH_ROOT:-/home/intellivix/train}
@@ -305,8 +305,8 @@ services:
       TRAINING_SSH_KEY_FILE: /run/keys/id_ed25519
       TRAINING_SSH_KNOWN_HOSTS: /run/keys/known_hosts
     volumes:
-      - /opt/clearml/ssh:/run/keys:ro
-      - /opt/clearml/branding/training-metrics.json:/run/metrics/training-metrics.json
+      - ${CLEARML_DIR_PATH:-/opt/clearml}/ssh:/run/keys:ro
+      - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/training-metrics.json:/run/metrics/training-metrics.json
     networks: [frontend]
 
   model-eval-console:
@@ -325,7 +325,7 @@ services:
       MODEL_EVAL_DB_PATH: /app/data/console.db
       MODEL_EVAL_DEFAULT_QUEUE: eval-windows
     volumes:
-      - /opt/clearml/model_eval_console/data:/app/data
+      - ${CLEARML_DIR_PATH:-/opt/clearml}/model_eval_console/data:/app/data
     ports:
       - "8090:8090"
     networks:
@@ -360,14 +360,14 @@ services:
       - --fileserver-host
       - http://fileserver:8081
     volumes:
-      - /opt/clearml/logs:/var/log/clearml
-      - /opt/clearml/config:/opt/clearml/config
+      - ${CLEARML_DIR_PATH:-/opt/clearml}/logs:/var/log/clearml
+      - ${CLEARML_DIR_PATH:-/opt/clearml}/config:/opt/clearml/config
 
   agent-services:
     networks:
       - backend
     container_name: clearml-agent-services
-    image: clearml/clearml-agent-services:pin-20260821
+    image: clearml/clearml-agent-services:latest
     deploy:
       restart_policy:
         condition: on-failure
@@ -390,11 +390,11 @@ services:
       AZURE_STORAGE_KEY: ${AZURE_STORAGE_KEY:-}
       GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
       CLEARML_WORKER_ID: "clearml-services"
-      CLEARML_AGENT_DOCKER_HOST_MOUNT: "/opt/clearml/agent:/root/.clearml"
+      CLEARML_AGENT_DOCKER_HOST_MOUNT: "${CLEARML_DIR_PATH:-/opt/clearml}/agent:/root/.clearml"
       SHUTDOWN_IF_NO_ACCESS_KEY: 1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /opt/clearml/agent:/root/.clearml
+      - ${CLEARML_DIR_PATH:-/opt/clearml}/agent:/root/.clearml
     depends_on:
       - apiserver
     entrypoint: >

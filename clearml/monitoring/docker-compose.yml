@@ -36,7 +36,7 @@ services:
 
   # ── Prometheus ───────────────────────────────────────────────
   prometheus:
-    image: prom/prometheus:pin-20260821
+    image: prom/prometheus:v2.55.1
     container_name: clearml-prometheus
     restart: unless-stopped
     user: "65534:65534"
@@ -57,7 +57,7 @@ services:
 
   # ── Grafana ──────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:pin-20260821
+    image: grafana/grafana:11.3.0
     container_name: clearml-grafana
     restart: unless-stopped
     user: "472:472"

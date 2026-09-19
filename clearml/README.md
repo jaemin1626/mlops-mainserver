@@ -252,10 +252,35 @@ bash packaging/pack.sh
 
 상세: [`packaging/README.md`](packaging/README.md)
 
-## SSH 원격 학습·테스트 (172.16.4.83)
+## SSH 원격 학습·테스트
 
-`.env`의 `TRAINING_SSH_*`로 전용 SSH 클라이언트를 설정합니다.
-`bash compose.sh --profile training-ssh build training-ssh`로 빌드한 뒤
-`bash training-ssh.sh --password doctor`로 비밀번호를 입력하여 연결을 확인합니다.
+`.env`의 `TRAINING_SSH_*`로 전용 SSH 클라이언트를 설정합니다. 접속 대상(`TRAINING_SSH_HOST`)은
+`TRAINING_SERVER_IP`를 그대로 따르고, `TRAINING_SSH_USER`는 **학습 서버의 로그인 계정**입니다.
+
+### 가장 쉬운 방법 (자동)
+
+`.env`만 채우고 터미널에서 `bash start.sh` 를 실행합니다. 학습 서버 쪽 작업이 필요하면 물어보고 SSH 로 대신 합니다.
+
+- 키가 학습 서버에 등록되어 있지 않으면 → 공개키 자동 등록을 제안합니다 (학습 서버 비밀번호 1회)
+- 학습 서버 NFS(2049)가 열려 있지 않으면 → `train.env` 값을 채우고 `export_dataset.sh setup` 을 SSH 로 실행하도록 제안합니다 (sudo 비밀번호 입력)
+- 학습 서버 작업을 원하지 않으면 `bash start.sh --no-remote-setup`. 단독 실행은 `bash packaging/bootstrap-training-server.sh key|nfs|all [--dry-run]`
+
+### 수동으로 하는 순서
+
+| 순서 | 서버 | 할 일 | 확인 |
+|---|---|---|---|
+| 1 | MLOps | `.env` 작성 후 `bash packaging/gen-ssh-key.sh` — 공개키 한 줄 출력 | 지문: `ssh-keygen -lf ssh/id_ed25519.pub` |
+| 2 | 학습 | `train.env`의 `MLOPS_SSH_PUBLIC_KEY`에 그 줄 입력 → `install-key`, `export_dataset.sh setup` | **`ssh-keygen -lf ~/.ssh/authorized_keys` 에 1번의 지문이 있어야 함** |
+| 3 | MLOps | `ssh-keyscan -p <포트> -H <학습서버IP> >> ssh/known_hosts` | `ssh-keygen -lf ssh/known_hosts` |
+| 4 | MLOps | `bash start.sh` — SSH 접속을 시험하고, 실패하면 조치 명령을 출력 | `bash training-ssh.sh doctor` |
+| 5 | MLOps | `./compose.sh --profile training-ssh up -d` — 지표 수집(`training-metrics`) 시작 | 대시보드 `TRAINING SERVER` 헤더 |
+
+- `train.env`에 키를 적는 것과 `authorized_keys`에 들어가는 것은 별개입니다. 2번 확인을 건너뛰면
+  `Permission denied (publickey,password)` 로 막힙니다. `install-key`가 등록하지 못하면
+  `echo '<공개키 한 줄>' >> ~/.ssh/authorized_keys` 로 직접 덧붙이세요(`.ssh` 700, `authorized_keys` 600).
+- `sudo bash start.sh` 나 `sudo bash training-ssh.sh` 로 실행하지 마세요. 키 소유자와 컨테이너 UID 가 어긋납니다.
+  `start.sh`가 키 소유자에 맞춰 `TRAINING_SSH_UID/GID`를 설정하며, 값이 바뀌면
+  `bash compose.sh --profile training-ssh build training-ssh`로 이미지를 다시 빌드합니다.
+
 학습은 `doctor` 대신 `detector` 또는 `vlm`을 지정합니다.
 키 인증, 상태·로그 조회, 테스트 경로 설정은 [SSH 실행 가이드](training_ssh/README.md)를 참고하세요.

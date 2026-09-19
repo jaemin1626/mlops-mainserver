@@ -9,7 +9,7 @@ class ClientTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         f = Path(self.temp.name) / 'credential'
         f.touch()
-        self.env = {'TRAINING_SSH_KEY_FILE': str(f), 'TRAINING_SSH_KNOWN_HOSTS': str(f)}
+        self.env = {'TRAINING_SSH_HOST': '172.16.4.113', 'TRAINING_SSH_KEY_FILE': str(f), 'TRAINING_SSH_KNOWN_HOSTS': str(f)}
 
     def test_key_mode(self):
         args = command(['doctor'], self.env)

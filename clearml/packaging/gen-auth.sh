@@ -108,19 +108,17 @@ def hocon_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 content = f"""# ClearML fixed users — packaging/gen-auth.sh 로 생성·갱신
-# 비밀번호 원본: /opt/clearml/.env (CLEARML_LOGIN_PASSWORD)
+#
+# 로그인 계정은 access-control(관리자 화면)이 DB 에서 관리하고, 그 결과를
+# config/fixed-users.json 에 bcrypt 해시로 써 둔다. apiserver 는 그 파일을 읽으므로
+# 여기서는 해시 비교(pass_hashed)만 켜고, 계정 목록은 비워 둔다.
+# (초기 관리자는 start.sh 가 .env 의 CLEARML_LOGIN_* 로 access-control 에 만든다)
 
 auth {{
     fixed_users {{
         enabled: true
-        pass_hashed: false
-        users: [
-            {{
-                username: "{hocon_escape(user)}"
-                password: "{hocon_escape(password)}"
-                name: "{hocon_escape(name)}"
-            }}
-        ]
+        pass_hashed: true
+        users: []
     }}
 }}
 """
