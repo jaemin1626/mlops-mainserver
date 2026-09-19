@@ -21,6 +21,16 @@ import urllib.request
 
 DEFAULT_PROJECTS = "Dataset,Detector,VLM"
 
+# 프로젝트 Overview 에 표시되는 설명. 여기에 없는 이름은 설명 없이 만든다.
+DESCRIPTIONS = {
+    "Detector": "Detector (Vision Analysis Model)\n\n"
+                "영상 속 객체를 빠르고 정밀하게 탐지하여 위치와 종류를 분석하는 비전 AI 모델",
+    "VLM": "VLM (Vision Language Model)\n\n"
+           "영상의 장면과 행동, 상황적 맥락을 종합적으로 이해하고 자연어로 해석하는 멀티모달 AI 모델",
+}
+# 이전 버전이 만들던 설명 — 이 값(또는 빈 값)일 때만 새 설명으로 바꾼다 (사용자가 직접 고친 설명은 건드리지 않음)
+OLD_DEFAULT_DESCRIPTIONS = {"", "기본 프로젝트 (start.sh 로 생성)"}
+
 
 def load_env(path):
     values = {}
@@ -89,15 +99,30 @@ def main():
         return 0
     auth = {"Authorization": "Bearer " + token}
 
-    existing = {p["name"] for p in call(api, "projects.get_all", {"only_fields": ["name"]}, auth)[0]["data"]["projects"]}
+    existing = {
+        p["name"]: p
+        for p in call(api, "projects.get_all", {"only_fields": ["name", "description"]}, auth)[0]["data"]["projects"]
+    }
     for name in names:
-        if name in existing:
-            print(f"  ✓ 프로젝트 있음: {name}")
-        elif dry_run:
-            print(f"  · [dry-run] 만들 프로젝트: {name}")
+        wanted = DESCRIPTIONS.get(name, "")
+        if name not in existing:
+            if dry_run:
+                print(f"  · [dry-run] 만들 프로젝트: {name}")
+            else:
+                payload = {"name": name}
+                if wanted:
+                    payload["description"] = wanted
+                call(api, "projects.create", payload, auth)
+                print(f"  ✓ 프로젝트 생성: {name}")
+        elif (existing[name].get("description") or "") != wanted \
+                and (existing[name].get("description") or "") in OLD_DEFAULT_DESCRIPTIONS:
+            if dry_run:
+                print(f"  · [dry-run] 설명 갱신: {name}")
+            else:
+                call(api, "projects.update", {"project": existing[name]["id"], "description": wanted}, auth)
+                print(f"  ✓ 프로젝트 설명 갱신: {name}")
         else:
-            call(api, "projects.create", {"name": name, "description": "기본 프로젝트 (start.sh 로 생성)"}, auth)
-            print(f"  ✓ 프로젝트 생성: {name}")
+            print(f"  ✓ 프로젝트 있음: {name}")
     return 0
 
 

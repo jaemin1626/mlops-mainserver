@@ -89,8 +89,8 @@ services:
       CLEARML__secure__credentials__services_agent__user_secret: ${CLEARML_AGENT_SECRET_KEY:-}
       # 서버 고유 서명 키. 비워두면 GitHub 에 공개된 ClearML 기본 키를 쓰게 되므로
       # 값이 없으면 아예 기동을 막는다. packaging/gen-secrets.sh 로 만든다.
-      CLEARML__secure__auth__token_secret: ${CLEARML_TOKEN_SECRET:?packaging/gen-secrets.sh 를 먼저 실행하세요}
-      CLEARML__secure__http__session_secret__apiserver: ${CLEARML_SESSION_SECRET:?packaging/gen-secrets.sh 를 먼저 실행하세요}
+      CLEARML__secure__auth__token_secret: ${CLEARML_TOKEN_SECRET:?gen_secrets.sh 를 먼저 실행하세요}
+      CLEARML__secure__http__session_secret__apiserver: ${CLEARML_SESSION_SECRET:?gen_secrets.sh 를 먼저 실행하세요}
     ports:
     - "8008:8008"
     networks:
@@ -136,7 +136,7 @@ services:
     image: clearml/server:2.3.0-705
     environment:
       CLEARML__fileserver__delete__allow_batch: "true"
-      CLEARML__secure__auth__token_secret: ${CLEARML_TOKEN_SECRET:?packaging/gen-secrets.sh 를 먼저 실행하세요}
+      CLEARML__secure__auth__token_secret: ${CLEARML_TOKEN_SECRET:?gen_secrets.sh 를 먼저 실행하세요}
     restart: unless-stopped
     volumes:
     - ${CLEARML_DIR_PATH:-/opt/clearml}/logs:/var/log/clearml
@@ -236,7 +236,7 @@ services:
       SEOUL_STUDIO_DATASETS_DIR: /data/datasets
       SEOUL_STUDIO_HOST_OUTPUT_DIR: ${MLOPS_GENERATED_MOUNT_PATH:-/home/intellivix/train/ComfyUI/generate_datasets}
       SEOUL_STUDIO_CONFIG: /data/config/config.json
-      SEOUL_STUDIO_COMFY_URL: ${SEOUL_STUDIO_COMFY_URL:?run apply-env.sh — SEOUL_STUDIO_COMFY_URL}
+      SEOUL_STUDIO_COMFY_URL: ${SEOUL_STUDIO_COMFY_URL:?apply_env.sh 를 먼저 실행하세요}
       SEOUL_STUDIO_BLUR_WEIGHTS: ${SEOUL_STUDIO_BLUR_WEIGHTS:-/data/models/anonymize/best.pt}
       SEOUL_STUDIO_BLUR_RATIO: ${SEOUL_STUDIO_BLUR_RATIO:-10}
       SEOUL_STUDIO_BLUR_CONF: ${SEOUL_STUDIO_BLUR_CONF:-0.25}

@@ -125,7 +125,7 @@
   // Dashboard → DATASETS routing must run before Angular bootstraps.
   // Cached stock index.html may not include ivx-dashboard.js; env.js is no-store.
   if (!document.getElementById('ivx-dashboard-js')) {
-    document.write('<script id="ivx-dashboard-js" src="/ivx-dashboard.js?v=13"><\/script>');
+    document.write('<script id="ivx-dashboard-js" src="/ivx-dashboard.js?v=14"><\/script>');
   }
 
   var head = document.head || document.getElementsByTagName('head')[0];

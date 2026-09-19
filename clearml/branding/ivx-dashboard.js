@@ -537,6 +537,51 @@
     return false;
   }
 
+  /* Dashboard: Detector / VLM 카드를 누르면 프로젝트 Overview 가 아니라 진행 중인 Task 로 이동한다.
+     진행 중인 Task 가 없으면 가장 최근 Task, Task 가 아예 없으면 기존처럼 프로젝트 화면으로 간다. */
+  var TASKS_EX = '/api/v2.23/tasks.get_all_ex';
+  var TASK_PROJECTS = { detector: true, vlm: true };
+
+  function onDashboardPage() {
+    return (location.pathname.replace(/\/$/, '') || '/') === '/dashboard';
+  }
+
+  function apiRaw(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      if (!res.ok) throw new Error(String(res.status));
+      return res.json();
+    });
+  }
+
+  function findTaskForProject(projectId, statuses) {
+    var body = {
+      project: [projectId],
+      include_subprojects: true,
+      order_by: ['-last_update'],
+      page: 0,
+      page_size: 1,
+      only_fields: ['id', 'name', 'status', 'project']
+    };
+    if (statuses) body.status = statuses;
+    return apiRaw(TASKS_EX, body).catch(function () {
+      delete body.include_subprojects;   // 서버가 이 옵션을 모르면 하위 프로젝트 없이 다시 조회
+      return apiRaw(TASKS_EX, body);
+    }).then(function (payload) {
+      var tasks = payload && payload.data && payload.data.tasks;
+      return tasks && tasks.length ? tasks[0] : null;
+    });
+  }
+
+  function goToTask(task, fallbackProjectId) {
+    var projectId = projectRefId(task.project) || fallbackProjectId;
+    window.location.assign('/projects/' + encodeURIComponent(projectId) + '/tasks/' + encodeURIComponent(task.id));
+  }
+
   function handleProjectCardClick(e) {
     if (!onProjectCardPage()) return;
     if (shouldIgnoreClick(e.target)) return;
@@ -547,6 +592,23 @@
     var name = getProjectNameFromCard(card);
     var id = getProjectIdFromCard(card);
     if (!name && !id) return;
+
+    if (onDashboardPage() && TASK_PROJECTS[normName(name).toLowerCase()]) {
+      var taskProjectId = id || (projectByName[normName(name)] || {}).id;
+      if (taskProjectId) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        findTaskForProject(taskProjectId, ['in_progress'])
+          .then(function (task) { return task || findTaskForProject(taskProjectId); })
+          .then(function (task) {
+            if (task) goToTask(task, taskProjectId);
+            else goProjects(taskProjectId);
+          })
+          .catch(function () { goProjects(taskProjectId); });
+        return;
+      }
+    }
 
     var immediate = resolveDatasetId(name, id);
     if (immediate) {

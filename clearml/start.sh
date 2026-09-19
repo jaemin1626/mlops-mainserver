@@ -268,6 +268,10 @@ if [ "$FOLLOWUP" = 1 ]; then
     if [ "$SKIP_PROJECTS" = 0 ]; then
         python3 "${ROOT}/packaging/ensure-clearml-projects.py" || true
     fi
+    # MLOps 서비스(Seoul Studio 의 학습 중 생성 차단, Grafana exporter)가 ClearML 을 읽을 키를 발급해 .env 에 넣는다
+    # (이 키가 없으면 학습이 진행 중인지 알 수 없어 영상 생성을 막지 못한다)
+    step "MLOps 서비스용 ClearML API 키 (학습 중 영상 생성 차단)"
+    python3 "${ROOT}/packaging/provision-service-credentials.py" || true
     # 학습 서버가 ClearML 에 연결되도록 API 키를 발급해 학습 서버 train.env 에 넣는다 (SSH 가 되고 키가 비어 있을 때만)
     if [ "$SSH_OK" = 1 ]; then
         step "학습 서버 ClearML API 키 발급"
@@ -330,6 +334,12 @@ if [ "$SSH_OK" = 1 ]; then
     esac
 else
     echo "  학습 서버 SSH: 연결 안 됨 (start.sh 를 다시 실행해 연결)"
+fi
+if grep -qE '^CLEARML_ACCESS_KEY=.+' "${ROOT}/.env" 2>/dev/null && grep -qE '^CLEARML_SECRET_KEY=.+' "${ROOT}/.env" 2>/dev/null; then
+    echo "  학습 중 영상 생성 차단: 켜짐 (Seoul Studio 가 ClearML 학습 Task 를 확인)"
+else
+    echo "  ${YEL}!${NC} 학습 중 영상 생성 차단: 꺼짐 — .env 의 CLEARML_ACCESS_KEY / CLEARML_SECRET_KEY 가 비어 있습니다"
+    echo "    (웹 Settings > Workspace 에서 키를 발급해 넣고 bash start.sh 를 다시 실행하세요)"
 fi
 echo "=================================================="
 bash "${ROOT}/mount/scripts/mount_dataset.sh" status 2>/dev/null || true
