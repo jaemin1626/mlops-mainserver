@@ -248,13 +248,19 @@ else
             sh -c 'python /app/manage.py create-admin --username "$IVX_U" --name "$IVX_N" --password "$IVX_P"' >/dev/null
         ok "관리자 '${ADMIN_U}' 생성 (첫 로그인 시 비밀번호 변경 요구)"
         ./compose.sh up -d --force-recreate apiserver
+        # apiserver 가 응답할 때까지 기다린다
+        for _ in $(seq 1 30); do
+            curl -s -m 3 -o /dev/null "http://localhost:8008/debug.ping" && break
+            sleep 2
+        done
         # 처음 세팅 직후에는 .env 의 비밀번호가 유효하므로 기본 프로젝트(Dataset, Detector, VLM)도 만든다
         if [ "$SKIP_PROJECTS" = 0 ]; then
-            for _ in $(seq 1 30); do
-                curl -s -m 3 -o /dev/null "http://localhost:8008/debug.ping" && break
-                sleep 2
-            done
             python3 "${ROOT}/packaging/ensure-clearml-projects.py" || true
+        fi
+        # 학습 서버가 ClearML 에 연결되도록 API 키를 발급해 학습 서버 train.env 에 넣는다 (SSH 가 되고 키가 비어 있을 때만)
+        if [ "$SSH_OK" = 1 ]; then
+            step "학습 서버 ClearML API 키 발급"
+            python3 "${ROOT}/packaging/provision-training-credentials.py" || true
         fi
     fi
 fi
