@@ -228,40 +228,52 @@ ok "compose up 완료"
 # ── 초기 관리자 (로그인 계정이 하나도 없을 때만 .env 의 CLEARML_LOGIN_* 로 생성) ──
 step "초기 관리자 계정"
 ADMIN_COUNT=""
+FOLLOWUP=0   # 1: .env 의 임시 비밀번호가 아직 유효 → 기본 프로젝트 생성·학습 서버 API 키 발급을 이어서 한다
 for _ in $(seq 1 30); do
     ADMIN_COUNT="$(docker exec clearml-access-control python -c \
         "import sqlite3;print(sqlite3.connect('/data/access.db').execute('select count(*) from users').fetchone()[0])" 2>/dev/null || true)"
     [ -n "$ADMIN_COUNT" ] && break
     sleep 1
 done
+ADMIN_ENV="$(set -a; . "${ROOT}/.env"; printf '%s\n%s\n%s' "${CLEARML_LOGIN_USER:-admin}" "${CLEARML_LOGIN_NAME:-Intellivix Admin}" "${CLEARML_LOGIN_PASSWORD:-}")"
+IFS=$'\n' read -r -d '' ADMIN_U ADMIN_N ADMIN_P <<<"${ADMIN_ENV}"$'\n' || true
 if [ -z "$ADMIN_COUNT" ]; then
     warn "access-control 이 준비되지 않아 건너뜀 — 나중에: docker exec clearml-access-control python /app/manage.py create-admin ..."
 elif [ "$ADMIN_COUNT" != 0 ]; then
-    ok "로그인 계정 있음 (${ADMIN_COUNT}개) — 건너뜀"
+    ok "로그인 계정 있음 (${ADMIN_COUNT}개) — 관리자 생성 건너뜀"
+    # 관리자가 아직 임시 비밀번호를 바꾸지 않았다면(첫 로그인 전) 이전 실행이 중간에 끝났을 수 있으니 후속 작업을 이어서 한다
+    _TEMP="$(docker exec -e IVX_U="$ADMIN_U" clearml-access-control python -c \
+        "import os,sqlite3;print(sqlite3.connect('/data/access.db').execute('select count(*) from users where username=? and must_change_password=1',(os.environ['IVX_U'],)).fetchone()[0])" 2>/dev/null || true)"
+    if [ "${_TEMP:-0}" = 1 ]; then
+        ok "관리자 '${ADMIN_U}' 가 아직 임시 비밀번호 상태 — 프로젝트 생성·API 키 발급을 이어서 확인합니다"
+        FOLLOWUP=1
+    fi
+elif [ -z "$ADMIN_P" ]; then
+    warn ".env 에 CLEARML_LOGIN_PASSWORD 없음 — 관리자 생성 건너뜀"
 else
-    ADMIN_ENV="$(set -a; . "${ROOT}/.env"; printf '%s\n%s\n%s' "${CLEARML_LOGIN_USER:-admin}" "${CLEARML_LOGIN_NAME:-Intellivix Admin}" "${CLEARML_LOGIN_PASSWORD:-}")"
-    IFS=$'\n' read -r -d '' ADMIN_U ADMIN_N ADMIN_P <<<"${ADMIN_ENV}"$'\n' || true
-    if [ -z "$ADMIN_P" ]; then
-        warn ".env 에 CLEARML_LOGIN_PASSWORD 없음 — 관리자 생성 건너뜀"
+    docker exec -e IVX_U="$ADMIN_U" -e IVX_N="$ADMIN_N" -e IVX_P="$ADMIN_P" clearml-access-control \
+        sh -c 'python /app/manage.py create-admin --username "$IVX_U" --name "$IVX_N" --password "$IVX_P"' >/dev/null
+    ok "관리자 '${ADMIN_U}' 생성 (첫 로그인 시 비밀번호 변경 요구)"
+    ./compose.sh up -d --force-recreate apiserver
+    FOLLOWUP=1
+fi
+
+if [ "$FOLLOWUP" = 1 ]; then
+    # apiserver 가 응답할 때까지 기다린다
+    for _ in $(seq 1 30); do
+        curl -s -m 3 -o /dev/null "http://localhost:8008/debug.ping" && break
+        sleep 2
+    done
+    # 기본 프로젝트(Dataset, Detector, VLM) — 이미 있으면 건드리지 않는다
+    if [ "$SKIP_PROJECTS" = 0 ]; then
+        python3 "${ROOT}/packaging/ensure-clearml-projects.py" || true
+    fi
+    # 학습 서버가 ClearML 에 연결되도록 API 키를 발급해 학습 서버 train.env 에 넣는다 (SSH 가 되고 키가 비어 있을 때만)
+    if [ "$SSH_OK" = 1 ]; then
+        step "학습 서버 ClearML API 키 발급"
+        python3 "${ROOT}/packaging/provision-training-credentials.py" || true
     else
-        docker exec -e IVX_U="$ADMIN_U" -e IVX_N="$ADMIN_N" -e IVX_P="$ADMIN_P" clearml-access-control \
-            sh -c 'python /app/manage.py create-admin --username "$IVX_U" --name "$IVX_N" --password "$IVX_P"' >/dev/null
-        ok "관리자 '${ADMIN_U}' 생성 (첫 로그인 시 비밀번호 변경 요구)"
-        ./compose.sh up -d --force-recreate apiserver
-        # apiserver 가 응답할 때까지 기다린다
-        for _ in $(seq 1 30); do
-            curl -s -m 3 -o /dev/null "http://localhost:8008/debug.ping" && break
-            sleep 2
-        done
-        # 처음 세팅 직후에는 .env 의 비밀번호가 유효하므로 기본 프로젝트(Dataset, Detector, VLM)도 만든다
-        if [ "$SKIP_PROJECTS" = 0 ]; then
-            python3 "${ROOT}/packaging/ensure-clearml-projects.py" || true
-        fi
-        # 학습 서버가 ClearML 에 연결되도록 API 키를 발급해 학습 서버 train.env 에 넣는다 (SSH 가 되고 키가 비어 있을 때만)
-        if [ "$SSH_OK" = 1 ]; then
-            step "학습 서버 ClearML API 키 발급"
-            python3 "${ROOT}/packaging/provision-training-credentials.py" || true
-        fi
+        warn "학습 서버 SSH 가 연결되지 않아 ClearML API 키 발급을 건너뜀 — SSH 를 맞춘 뒤 start.sh 를 다시 실행하세요 (첫 로그인 전까지 가능)"
     fi
 fi
 
