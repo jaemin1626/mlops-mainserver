@@ -13,7 +13,7 @@
 #     bash /opt/clearml/start.sh
 #     bash /opt/clearml/start.sh --no-mount
 #     bash /opt/clearml/start.sh --no-monitoring
-#     bash /opt/clearml/start.sh --no-remote-setup   # 학습 서버 자동 세팅(키 등록·NFS export) 생략
+#     bash /opt/clearml/start.sh --no-remote-setup   # 학습 서버 SSH 확인 대기 없이 진행
 #     bash /opt/clearml/start.sh --no-projects       # 기본 프로젝트(Dataset·Detector·VLM) 생성 생략
 set -euo pipefail
 
@@ -93,16 +93,6 @@ elif [ -e "${SSH_KEY_DIR}/id_ed25519" ]; then
     ok "SSH 키 있음: ${SSH_KEY_DIR}/id_ed25519"
 else
     bash "${ROOT}/packaging/gen-ssh-key.sh" --dir "$SSH_KEY_DIR"
-    if [ "$SKIP_REMOTE" = 0 ] && [ -t 0 ]; then
-        echo "  → 이어서 학습 서버에 공개키를 자동 등록할 수 있습니다 (학습 서버 비밀번호 1회 입력)"
-    else
-        echo ""
-        echo "${YEL}==================================================${NC}"
-        echo "${YEL}  [알림] 학습 서버에 위 공개키를 등록하세요${NC}"
-        echo "${YEL}==================================================${NC}"
-        echo "  학습 서버의 ${TRAINING_SSH_USER:-계정}에서: echo '<위 공개키 한 줄>' >> ~/.ssh/authorized_keys"
-        echo "  (등록 후 start.sh 를 다시 실행하면 접속 확인과 나머지 단계가 진행됩니다)"
-    fi
 fi
 
 # SSH 키 파일 소유자와 컨테이너 실행 UID 를 맞춘다 (다르면 컨테이너가 키를 못 읽는다)
@@ -116,67 +106,98 @@ if [ -n "$SSH_KEY_DIR" ] && [ -e "${SSH_KEY_DIR}/id_ed25519" ]; then
     fi
 fi
 
-# 학습 서버 SSH 접속을 실제로 시험하고, 안 되면 조치할 명령을 그대로 보여 준다 (중단하지 않음)
+# 학습 서버 접속 정보 (.env)
+TR_HOST="$(set -a; . "${ROOT}/.env"; echo "${TRAINING_SSH_HOST:-${TRAINING_SERVER_IP:-}}")"
+TR_USER="$(set -a; . "${ROOT}/.env"; echo "${TRAINING_SSH_USER:-}")"
+TR_PORT="$(set -a; . "${ROOT}/.env"; echo "${TRAINING_SSH_PORT:-22}")"
+TR_KNOWN="${SSH_KEY_DIR}/known_hosts"
+
+# 학습 서버 호스트 키를 known_hosts 에 등록 (없을 때만, 지문을 함께 보여 준다)
+ensure_known_host() {
+    [ -n "$TR_HOST" ] || return 0
+    ssh-keygen -F "$TR_HOST" -f "$TR_KNOWN" >/dev/null 2>&1 && return 0
+    local scan; scan="$(ssh-keyscan -p "$TR_PORT" -t ed25519,ecdsa,rsa "$TR_HOST" 2>/dev/null)" || true
+    if [ -z "$scan" ]; then
+        warn "학습 서버(${TR_HOST}:${TR_PORT})에서 호스트 키를 가져오지 못했습니다 — 학습 서버 sshd 를 확인하세요"
+        return 1
+    fi
+    echo "  ssh-keyscan -p ${TR_PORT} -H ${TR_HOST} >> ${TR_KNOWN}"
+    mkdir -p "$(dirname "$TR_KNOWN")"
+    ssh-keyscan -H -p "$TR_PORT" -t ed25519,ecdsa,rsa "$TR_HOST" 2>/dev/null >> "$TR_KNOWN"
+    chmod 644 "$TR_KNOWN"
+    echo "$scan" | ssh-keygen -lf - | sed 's/^/      지문 /'
+    ok "학습 서버 호스트 키를 known_hosts 에 등록"
+}
+
+# 학습 서버 SSH 접속을 실제로 시험한다 (0: 성공)
 check_training_ssh() {
-    local key="${SSH_KEY_DIR}/id_ed25519" khosts="${SSH_KEY_DIR}/known_hosts" host user port out rc=0
+    local key="${SSH_KEY_DIR}/id_ed25519" out rc=0
     [ -e "$key" ] || return 0
-    host="$(set -a; . "${ROOT}/.env"; echo "${TRAINING_SSH_HOST:-${TRAINING_SERVER_IP:-}}")"
-    user="$(set -a; . "${ROOT}/.env"; echo "${TRAINING_SSH_USER:-}")"
-    port="$(set -a; . "${ROOT}/.env"; echo "${TRAINING_SSH_PORT:-22}")"
-    if [ -z "$host" ] || [ -z "$user" ]; then
+    if [ -z "$TR_HOST" ] || [ -z "$TR_USER" ]; then
         warn "TRAINING_SSH_HOST / TRAINING_SSH_USER 미설정 — SSH 접속 확인 건너뜀"
         return 0
     fi
-    out="$(timeout 15 ssh -i "$key" -p "$port" -o BatchMode=yes -o IdentitiesOnly=yes \
-        -o UserKnownHostsFile="$khosts" -o StrictHostKeyChecking=yes -o ConnectTimeout=8 \
-        "${user}@${host}" true 2>&1)" || rc=$?
+    out="$(timeout 15 ssh -i "$key" -p "$TR_PORT" -o BatchMode=yes -o IdentitiesOnly=yes \
+        -o UserKnownHostsFile="$TR_KNOWN" -o StrictHostKeyChecking=yes -o ConnectTimeout=8 \
+        "${TR_USER}@${TR_HOST}" true 2>&1)" || rc=$?
     if [ "$rc" = 0 ]; then
-        ok "학습 서버 SSH 접속 확인: ${user}@${host}"
-    elif echo "$out" | grep -qiE "host key verification failed|no .* host key is known"; then
-        warn "학습 서버 호스트 키가 known_hosts 에 없습니다. MLOps 서버에서 실행:"
-        echo "      ssh-keyscan -p ${port} -H ${host} >> ${khosts}"
-        return 1
+        ok "학습 서버 SSH 접속 확인 (SSH_OK): ${TR_USER}@${TR_HOST}"
     elif echo "$out" | grep -qi "permission denied"; then
-        warn "학습 서버가 이 키를 받아 주지 않습니다 (${user}@${host}). 이 서버의 키 지문:"
-        echo "      $(ssh-keygen -lf "${key}.pub" | awk '{print $2}')"
-        echo "    [권장] 학습 서버의 mount/config/train.env 의 MLOPS_SSH_PUBLIC_KEY 를 아래 한 줄로 바꾸고 bash start.sh 재실행"
-        echo "      $(cat "${key}.pub")"
-        echo "    (학습 서버 start.sh 가 접속 IP 제한(restrict,from=)을 붙여 등록합니다)"
-        echo "    [대안] 학습 서버의 ${user} 계정에서 직접 추가:"
-        echo "      mkdir -p ~/.ssh && chmod 700 ~/.ssh"
-        echo "      echo '$(cat "${key}.pub")' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
-        echo "    (TRAINING_SSH_USER=${user} 가 학습 서버의 실제 계정과 같은지도 확인)"
+        warn "학습 서버가 이 MLOps 서버의 키를 받아 주지 않습니다 (${TR_USER}@${TR_HOST})"
         return 1
     else
         warn "학습 서버 SSH 접속 실패: $(echo "$out" | tail -1)"
         return 1
     fi
 }
+
+# 학습 서버에서 해야 할 일을 그대로 보여 준다
+show_train_instructions() {
+    echo ""
+    echo "${YEL}==================================================${NC}"
+    echo "${YEL}  학습 서버 세팅이 필요합니다 (MLOps SSH 공개키 등록)${NC}"
+    echo "${YEL}==================================================${NC}"
+    echo ""
+    echo "다음은 학습 서버(${TR_USER}@${TR_HOST})에서 실행하세요:"
+    echo "  1) mount/config/train.env 의 MLOPS_SSH_PUBLIC_KEY 를 아래 한 줄로 입력 (이미 다른 키가 있으면 교체)"
+    echo ""
+    echo "       $(cat "${SSH_KEY_DIR}/id_ed25519.pub")"
+    echo ""
+    echo "     키 지문: $(ssh-keygen -lf "${SSH_KEY_DIR}/id_ed25519.pub" | awk '{print $2}')"
+    echo "  2) bash start.sh"
+    echo "     - MLOps 서버 IP / 루트 경로는 이 서버 .env 의 값과 같아야 합니다:"
+    echo "       $(set -a; . "${ROOT}/.env"; echo "IP=${CLEARML_SERVER_IP}  루트=${MLOPS_ROOT}")"
+    echo ""
+}
+
 if [ -n "$SSH_KEY_DIR" ]; then
-    # 학습 서버 호스트 키가 known_hosts 에 없으면 지문을 보여 주고 등록 (새로 clone 한 직후에는 항상 없다)
-    _khost="$(set -a; . "${ROOT}/.env"; echo "${TRAINING_SSH_HOST:-${TRAINING_SERVER_IP:-}}")"
-    if [ -n "$_khost" ] && [ "$SKIP_REMOTE" = 0 ] && [ -t 0 ] \
-        && ! ssh-keygen -F "$_khost" -f "${SSH_KEY_DIR}/known_hosts" >/dev/null 2>&1; then
-        bash "${ROOT}/packaging/bootstrap-training-server.sh" hostkey || warn "호스트 키 등록을 건너뜀"
-    fi
-    if ! check_training_ssh && [ "$SKIP_REMOTE" = 0 ] && [ -t 0 ]; then
-        echo ""
-        echo "  학습 서버 세팅을 어떻게 할까요?"
-        echo "    1) 자동  — 이 서버가 SSH 로 대신 등록 (학습 서버 계정 비밀번호 1회 입력)"
-        echo "    2) 직접  — 학습 서버에서 start.sh 를 실행해 세팅한 뒤 여기로 돌아와 Enter"
-        echo "    3) 건너뜀"
-        read -r -p "  선택 [1/2/3] > " _choice
-        case "${_choice:-3}" in
-            1) bash "${ROOT}/packaging/bootstrap-training-server.sh" key || warn "자동 등록 실패 — 위 수동 명령을 사용하세요" ;;
-            2) echo ""
-               echo "  학습 서버에서 아래 한 줄을 mount/config/train.env 의 MLOPS_SSH_PUBLIC_KEY 값으로 넣고 (이미 다른 키가 있으면 교체)"
-               echo "  bash start.sh 를 실행하세요. (train.env 에 키가 비어 있으면 실행 중에 붙여 넣으라고 묻습니다)"
-               echo "    $(cat "${SSH_KEY_DIR}/id_ed25519.pub")"
-               echo "  (학습 서버의 MLOps IP·루트 경로는 이 서버 .env 의 CLEARML_SERVER_IP / MLOPS_ROOT 와 같아야 합니다)"
-               read -r -p "  학습 서버 세팅을 마쳤으면 Enter > " _ ;;
-            *) warn "건너뜀 — 학습 서버 SSH 는 나중에 start.sh 를 다시 실행해 연결하세요" ;;
-        esac
-        check_training_ssh || true
+    ensure_known_host || true
+    if ! check_training_ssh; then
+        show_train_instructions
+        if [ "$SKIP_REMOTE" = 0 ] && [ -t 0 ]; then
+            while true; do
+                read -r -p "학습 서버에서 위 내용을 진행하셨나요? [1=예 / 0=아니오(종료)] > " _ans
+                case "${_ans:-}" in
+                    1)
+                        echo ""
+                        echo "MLOps 서버에서 자동으로 실행합니다:"
+                        ensure_known_host || true
+                        echo "  ssh -o BatchMode=yes -p ${TR_PORT} ${TR_USER}@${TR_HOST} true && echo SSH_OK"
+                        if check_training_ssh; then break; fi
+                        echo "  아직 접속되지 않습니다. 학습 서버 세팅을 확인한 뒤 다시 선택하세요."
+                        echo ""
+                        ;;
+                    0)
+                        echo ""
+                        echo "학습 서버 세팅을 마친 뒤 bash start.sh 를 다시 실행하세요."
+                        exit 0
+                        ;;
+                    *) echo "  1 또는 0 을 입력하세요." ;;
+                esac
+            done
+        else
+            warn "대화형 터미널이 아니거나 --no-remote-setup 이라 대기하지 않고 진행합니다 (학습 서버 SSH 는 나중에 다시 실행해 연결)"
+        fi
     fi
 fi
 
@@ -191,13 +212,7 @@ if [ "$SKIP_MOUNT" = 1 ]; then
 else
     NFS_HOST="$(set -a; . "${ROOT}/.env"; echo "${TRAINING_SERVER_IP:-}")"
     if [ -n "$NFS_HOST" ] && ! timeout 4 bash -c "echo > /dev/tcp/${NFS_HOST}/2049" 2>/dev/null; then
-        warn "학습 서버 NFS(2049)에 연결할 수 없습니다 — export 가 안 되어 있는 것으로 보입니다"
-        if [ "$SKIP_REMOTE" = 0 ] && [ -t 0 ]; then
-            read -r -p "  SSH 로 학습 서버 NFS export 를 자동 세팅할까요? (sudo 비밀번호 입력) [y/N] " _yn
-            if [ "${_yn:-n}" = y ]; then
-                bash "${ROOT}/packaging/bootstrap-training-server.sh" nfs || warn "자동 세팅 실패 — 학습 서버에서 수동으로 진행하세요"
-            fi
-        fi
+        warn "학습 서버 NFS(2049)에 연결할 수 없습니다 — 학습 서버에서 bash start.sh (NFS export 포함)를 실행했는지 확인하세요"
     fi
     bash "${ROOT}/mount/scripts/mount_dataset.sh" mount || true
     bash "${ROOT}/mount/scripts/mount_generated.sh" mount || true

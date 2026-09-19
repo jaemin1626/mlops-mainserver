@@ -1,6 +1,6 @@
 # MLOps Main Server
 
-Intellivix MLOps 메인 서버입니다. **82(ai-server)** 에 ClearML, Data Studio, (선택) Grafana 모니터링을 운영합니다.
+Intellivix MLOps 메인 서버입니다. ClearML, Data Studio, Seoul Studio, (선택) Grafana 모니터링을 운영합니다.
 
 | 서버 | IP | 역할 |
 |------|-----|------|
@@ -13,38 +13,27 @@ Intellivix MLOps 메인 서버입니다. **82(ai-server)** 에 ClearML, Data Stu
 
 ## 1. 실행 준비
 
-### 환경 세팅 순서
+**처음 세팅 절차는 [`clearml/README.md` 1장](clearml/README.md#1-빠른-시작--처음-세팅)에 단계별로 정리되어 있습니다.** 요약:
 
 ```bash
-# ① 설정 파일 만들기
-cd /opt/clearml
+git clone http://172.16.8.64:1541/woals1626/mlops-mainserver.git
+cd mlops-mainserver/clearml
 cp .env.example .env
-vi .env                          # 아래 "수정해야 할 파일" 참고
-
-# ② 한 번에 기동 (권장)
-bash start.sh
+vi .env                # MLOPS_ROOT, CLEARML_SERVER_IP, TRAINING_SERVER_IP, TRAINING_SERVER_USER, TRAINING_ROOT
+bash start.sh          # sudo 없이 실행
 ```
 
-`start.sh` 가 순서대로 처리합니다:
+`start.sh` 가 학습 서버 SSH 가 안 되는 것을 발견하면 **학습 서버에서 실행할 내용(공개키)** 을 출력하고 기다립니다.
+학습 서버에서 `bash start.sh` 를 실행한 뒤, MLOps 터미널로 돌아와 `1` 을 입력하면 나머지가 자동으로 진행됩니다.
 
-| 순서 | 내용 |
-|------|------|
-| 1 | 168 Dataset NFS 마운트 |
-| 2 | 서명 키·로그인 계정 생성 + URL 파생 값 반영 |
-| 3 | ClearML docker compose 기동 |
-| 4 | Data Studio 재기동 (마운트 경로 반영) |
-| 5 | Grafana 모니터링 (`.env` 반영) |
+| 순서 | 서버 | 할 일 |
+|------|------|-------|
+| 1 | MLOps | `.env` 작성 → `bash start.sh` (2단계에서 멈추면 안내를 따름) |
+| 2 | 학습 | `train.env` 의 `MLOPS_SSH_PUBLIC_KEY` 에 안내된 공개키 입력 → `bash start.sh` |
+| 3 | MLOps | "진행하셨나요?" 에 `1` → NFS 마운트, ClearML·Grafana 기동, 관리자 생성, 지표 수집까지 자동 |
+| 4 | MLOps | 웹 첫 로그인(비밀번호 변경) → 학습 서버에 ClearML API 키 등록 |
 
-`.env` 수정 후 **`bash start.sh`** 만 실행하면 됩니다.
-
-Dataset 마운트 없이: `bash start.sh --no-mount`  
-Grafana 안 쓸 때: `bash start.sh --no-monitoring`
-
-### Grafana API 키
-
-ClearML UI에서 credentials 발급 → `.env`에 넣기 → **`bash start.sh`** 재실행.
-
-> train/valid loss 곡선은 **ClearML UI(8080)** 에서 봅니다. Grafana는 요약·현황용입니다.
+`start.sh` 는 여러 번 실행해도 안전합니다. 옵션: `--no-mount`, `--no-monitoring`, `--no-remote-setup`, `--no-projects`.
 
 ### 접속 주소
 
@@ -55,7 +44,7 @@ ClearML UI에서 credentials 발급 → `.env`에 넣기 → **`bash start.sh`**
 | Seoul Studio | `http://{CLEARML_SERVER_IP}:8080/seoul-studio/` | ComfyUI: `{TRAINING_SERVER_IP}:{COMFYUI_PORT}` |
 | Grafana | `http://{MONITORING_SERVER_IP}:3000` | 선택 |
 
-로그인 계정·비밀번호는 `start.sh` 실행 후 터미널 출력 또는 `/opt/clearml/.env` 의 `CLEARML_LOGIN_*` 를 확인하세요.
+첫 로그인: `admin` / `clearml/.env` 의 `CLEARML_LOGIN_PASSWORD`. 로그인 후 비밀번호를 바꾸라는 화면이 나옵니다.
 
 ### IP·NFS 변경 후
 

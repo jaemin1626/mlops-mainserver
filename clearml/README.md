@@ -1,81 +1,193 @@
-# ClearML MLOps — 82 서버 운영 가이드
+# ClearML MLOps — 운영 가이드
 
 Intellivix 브랜딩 ClearML + Data Studio + (선택) Grafana MLOps 현황판입니다.
 
 ---
 
-## 1. 빠른 시작 (82 서버)
+## 1. 빠른 시작 — 처음 세팅
+
+두 서버가 함께 세팅됩니다. **MLOps 서버**(이 저장소, ClearML·Data Studio·Grafana)와 **학습 서버**(별도 저장소, 학습 실행·Dataset NFS 제공)입니다.
+사용자가 하는 일은 **① MLOps `.env` 작성 → ② MLOps `bash start.sh` → ③ (안내가 나오면) 학습 서버에서 `bash start.sh` → ④ MLOps에서 `1` 입력** 입니다.
 
 ### 1-1. 사전 조건
 
-- Docker, Docker Compose v2 설치
-- 코드 위치: `/opt/clearml`
-- Data Studio Dataset: 168 NFS 마운트 가능해야 함
+| 서버 | 필요한 것 |
+|------|-----------|
+| MLOps | Docker, Docker Compose v2, `python3`, `sudo` 가능한 계정, 이 저장소를 `git clone` 한 상태 |
+| 학습 서버 | 학습 서버 저장소가 이미 있고 그 안에 `start.sh` 가 있어야 함 (NFS export·SSH 허용을 그 스크립트가 처리) |
+| 네트워크 | MLOps → 학습 서버 SSH(22), NFS(2049) 접근 가능 |
 
-### 1-2. 환경 세팅 순서
+> **`sudo bash start.sh` 로 실행하지 마세요.** 필요한 곳에서 스크립트가 스스로 sudo 를 씁니다. 전체를 sudo 로 돌리면 SSH 키·`.env` 소유자가 root 가 되어 컨테이너가 읽지 못합니다.
+> git 명령에도 sudo 를 붙이지 마세요 (`.git` 소유자가 root 로 바뀌어 커밋이 안 됩니다).
+
+### 1-2. 처음 세팅 순서 (전체 흐름)
+
+```
+[MLOps]  ① git clone → .env 작성
+[MLOps]  ② bash start.sh
+            └ 2단계에서 학습 서버 SSH 가 안 되면 멈추고 "학습 서버에서 실행할 내용"을 출력
+[학습]   ③ 출력된 공개키를 train.env 에 넣고 bash start.sh
+[MLOps]  ④ "진행하셨나요?" 에 1 입력 → 나머지 자동 진행
+[MLOps]  ⑤ 접속 확인 · 첫 로그인 · 후속 설정
+```
+
+#### ① 저장소 받기 + `.env` 작성 (MLOps)
 
 ```bash
-cd /opt/clearml
-
-# Step 1 — 설정 파일 준비
+cd ~
+git clone http://172.16.8.64:1541/woals1626/mlops-mainserver.git
+cd mlops-mainserver/clearml
 cp .env.example .env
-vi .env                    # IP, NFS, (선택) Grafana 비밀번호
+vi .env
+```
 
-# Step 2 — 전체 기동 (.env 수정 후 이것만 실행)
+`.env` 에서 **반드시 확인할 값**:
+
+| 키 | 의미 | 주의 |
+|----|------|------|
+| `MLOPS_ROOT` | 이 저장소의 위치 | 실제 clone 위치와 **같아야 함**. 다르면 `start.sh` 가 에러로 멈춤. 아래 경로들이 여기서 자동 계산됨 |
+| `CLEARML_SERVER_IP` | MLOps 서버 IP | |
+| `TRAINING_SERVER_IP` | 학습 서버 IP | SSH 접속 대상(`TRAINING_SSH_HOST`)도 이 값을 따름 |
+| `TRAINING_SERVER_USER` | 학습 서버의 로그인 계정 | SSH 계정(`TRAINING_SSH_USER`)도 이 값을 따름. **MLOps 쪽 계정이 아님** |
+| `TRAINING_ROOT` | 학습 서버 저장소 루트 | Dataset·생성 영상 경로(`TRAINING_DATASET_PATH` 등)와 SSH 작업 경로가 여기서 자동 계산됨 |
+
+나머지(포트, Grafana, 에이전트 키 등)는 기본값으로 두어도 됩니다. 서명 키·로그인 비밀번호·URL 파생값은 `start.sh` 가 채웁니다.
+
+#### ② `start.sh` 실행 (MLOps)
+
+```bash
 bash start.sh
 ```
 
-**Step 2 (`start.sh`) 내부 순서:**
+화면에 단계가 순서대로 나옵니다. 각 단계가 하는 일:
+
+| 단계 | 내용 |
+|------|------|
+| 1/6 환경 설정 | `.env` 준비, 서명 키(`CLEARML_TOKEN_SECRET`·`SESSION_SECRET`)·로그인 비밀번호 생성, 파생 URL 반영. `MLOPS_ROOT` 가 실제 위치와 다르면 여기서 중단 |
+| 2/6 학습 서버 SSH 키 | SSH 키 생성, 학습 서버 호스트 키를 `ssh/known_hosts` 에 등록, **접속 시험**. 안 되면 → ③ 으로 (아래) |
+| 3/6 NFS mount | 학습 서버의 Dataset·생성 영상 폴더를 이 서버에 마운트 (sudo 비밀번호를 물으면 이 서버 계정 비밀번호) |
+| 4/6 compose up | 폴더 권한 정리 → ClearML 기동 → 초기 관리자 계정 생성 → 웹서버 재시작 → 학습 서버 지표 수집(`training-metrics`) 기동 |
+| 5/6 | Data Studio · Seoul Studio 재기동 (마운트 경로 반영) |
+| 6/6 Grafana | 모니터링 스택 기동 |
+
+> 처음에는 `apiserver ... Error` 같은 **빨간 줄이 나올 수 있는데 정상**입니다. 직접 빌드하는 이미지를 Docker Hub 에서 먼저 받으려다 실패하고, 이어서 이 서버에서 빌드하는 순서입니다. 첫 빌드는 시간이 걸립니다.
+
+#### ③ 학습 서버 세팅 (2/6 단계에서 멈췄을 때)
+
+학습 서버가 이 MLOps 서버의 SSH 키를 모르면 `start.sh` 가 이렇게 출력하고 기다립니다.
 
 ```
-① Dataset NFS 마운트       mount/scripts/mount_dataset.sh
-② 생성형 결과 NFS 마운트   mount/scripts/mount_generated.sh
-③ .env 자동 보완           gen-secrets.sh → gen-auth.sh → apply-env.sh
-③ ClearML 기동           compose.sh up -d
-④ Data Studio · Seoul Studio 재기동
-⑤ Grafana 모니터링     monitoring-compose.sh up -d --force-recreate
+다음은 학습 서버(ailab13@172.16.4.113)에서 실행하세요:
+  1) mount/config/train.env 의 MLOPS_SSH_PUBLIC_KEY 를 아래 한 줄로 입력 (이미 다른 키가 있으면 교체)
+       ssh-ed25519 AAAA... mlops-aidev-168
+  2) bash start.sh
+학습 서버에서 위 내용을 진행하셨나요? [1=예 / 0=아니오(종료)] >
 ```
 
-`.env` 수정 후 **`bash start.sh` 만 실행**하면 ClearML·Grafana 모두 `.env` 가 반영됩니다.
+**이 터미널은 닫지 말고 그대로 두고**, 학습 서버에서 다음을 합니다.
 
-마운트 없이 ClearML만:
+1. 학습 서버(`TRAINING_SERVER_USER` 계정)에 로그인해 저장소 폴더(`TRAINING_ROOT`)로 이동합니다.
+2. `mount/config/train.env` 의 `MLOPS_SSH_PUBLIC_KEY=` 값을 출력된 공개키 **한 줄**로 넣습니다. 앞뒤가 잘리거나 줄바꿈이 들어가면 안 됩니다. (이미 다른 키가 들어 있으면 **교체**합니다. 저장소를 다시 clone 하면 키가 새로 만들어지므로 옛 키가 남아 있는 경우가 많습니다.)
+3. `bash start.sh` 를 실행합니다.
+   - MLOps 서버 IP 와 루트 경로를 물으면 MLOps `.env` 의 `CLEARML_SERVER_IP`, `MLOPS_ROOT` 와 **같은 값**을 입력합니다.
+   - 공개키 등록, SSH 허용, NFS export 가 진행됩니다. sudo 비밀번호를 한 번 입력합니다.
+   - "학습 서버 세팅 완료"가 나오면 끝입니다. 그 아래에 "다음은 MLOps 서버에서 실행하세요: ssh-keyscan ..." 이라고 나와도 **직접 입력하지 않아도 됩니다.** ④ 에서 MLOps `start.sh` 가 같은 일을 대신 합니다.
 
-```bash
-bash start.sh --no-mount
+> 6단계의 "ClearML API 키가 없어 건너뜁니다" 는 나중 일입니다 (1-4 참고).
+
+#### ④ MLOps 로 돌아와서 `1` 입력
+
+`1` 을 입력하면 MLOps `start.sh` 가 이렇게 자동 실행합니다.
+
+```
+ssh-keyscan -p 22 -H <학습서버IP> >> ssh/known_hosts      # 이미 등록됐으면 생략
+ssh -o BatchMode=yes -p 22 <계정>@<학습서버IP> true && echo SSH_OK
 ```
 
-Grafana 안 쓸 때:
+- **접속 성공**: `SSH_OK` 표시 후 3/6 부터 끝까지 자동 진행됩니다.
+- **아직 접속 안 됨**: "아직 접속되지 않습니다" 가 나오고 같은 질문이 다시 나옵니다. 학습 서버 세팅을 확인한 뒤 다시 `1` 을 누르세요. 원인은 아래 6장(문제 해결)을 참고하세요.
+- `0` 을 입력하면 종료됩니다. 학습 서버를 세팅한 뒤 `bash start.sh` 를 다시 실행하면 됩니다 (이미 한 단계는 건너뜀).
+- 터미널이 없는 환경(자동 실행)이나 `--no-remote-setup` 이면 기다리지 않고 진행하고, SSH 는 나중에 연결합니다.
 
-```bash
-bash start.sh --no-monitoring
-```
+#### ⑤ 끝난 뒤
 
-**Step 3 — 접속 확인**
+`start.sh` 마지막에 접속 주소가 출력됩니다.
 
 | 서비스 | URL |
 |--------|-----|
-| ClearML UI | http://172.16.4.82:8080 (`.env`의 IP) |
-| Data Studio | http://172.16.4.82:8080/data-studio/ |
-| Seoul Studio | http://172.16.4.82:8080/seoul-studio/ |
-| 모델 평가 콘솔 | http://172.16.4.82:8090 |
+| ClearML UI | `http://{CLEARML_SERVER_IP}:8080` |
+| Data Studio | `http://{CLEARML_SERVER_IP}:8080/data-studio/` |
+| Seoul Studio | `http://{CLEARML_SERVER_IP}:8080/seoul-studio/` |
+| 모델 평가 콘솔 | `http://{CLEARML_SERVER_IP}:8090` |
+| Grafana | `http://{CLEARML_SERVER_IP}:3000/d/clearml-mlops-main` |
 
-로그인: `.env` 의 `CLEARML_LOGIN_USER` / `CLEARML_LOGIN_PASSWORD`  
-(비워 두었으면 `start.sh` 가 생성 — 터미널 출력 또는 `grep CLEARML_LOGIN_ .env` 로 확인)
+**첫 로그인**
 
-**Step 4 — Grafana API 키 (처음 한 번)**
+1. `http://{CLEARML_SERVER_IP}:8080` 접속 → `admin` / `.env` 의 `CLEARML_LOGIN_PASSWORD` (`grep CLEARML_LOGIN_ .env`)
+2. **첫 로그인 후 비밀번호를 바꾸라는 화면**이 나옵니다. 이 비밀번호는 임시값입니다. 바꾼 뒤에는 `.env` 의 값과 달라집니다.
+3. 계정 추가·권한은 관리자 화면(Administration)에서 합니다. 이 서버의 계정 정보는 `access-control` DB 에 있으며, 저장소에는 올라가지 않습니다.
 
-ClearML UI → Settings → Create credentials → `.env` 에 `CLEARML_ACCESS_KEY` / `CLEARML_SECRET_KEY` 입력 후 **`bash start.sh`** 다시 실행.
+**정상 동작 확인**
 
-Grafana: http://172.16.4.82:3000/d/clearml-mlops-main
+| 확인 | 명령 / 화면 |
+|------|-------------|
+| 컨테이너 | `./compose.sh ps` — 모두 `Up` (`clearml-agent-services` 는 에이전트 키가 없으면 종료되어 있을 수 있음) |
+| 학습 서버 SSH | `bash training-ssh.sh doctor` |
+| NFS | `mount | grep <학습서버IP>` — Dataset, generate_datasets 2개 |
+| 대시보드 | `/dashboard` 상단이 `TRAINING SERVER · <학습서버IP>` + `LIVE · 5초마다 갱신` |
 
-### 1-3. 이후 `.env` 수정 후
+### 1-3. `start.sh` 옵션
 
 ```bash
-cd /opt/clearml
-vi .env
-bash start.sh                    # 전체 반영 (Grafana 포함)
-bash packaging/apply-env.sh --restart   # IP만 바꿀 때
+bash start.sh                     # 전체
+bash start.sh --no-mount          # NFS 마운트 생략
+bash start.sh --no-monitoring     # Grafana 생략
+bash start.sh --no-remote-setup   # 학습 서버 SSH 확인에서 기다리지 않고 진행
+bash start.sh --no-projects       # 기본 프로젝트(Dataset·Detector·VLM) 생성 생략
 ```
+
+`start.sh` 는 **여러 번 실행해도 안전**합니다. 이미 있는 키·계정·마운트는 건드리지 않습니다.
+
+### 1-4. 처음 세팅 후 해야 할 일
+
+| 일 | 방법 |
+|----|------|
+| **학습 Task 를 ClearML 에 연결** | MLOps 웹 → 프로필 → Settings → Workspace → Create new credentials 로 키 발급 → 학습 서버에서 `./scripts/config.sh setup-clearml` 로 등록. 등록 전에는 학습 결과(Task)가 대시보드에 나오지 않음 |
+| 기본 프로젝트 만들기 | 웹에서 `NEW PROJECT` 로 `Dataset`, `Detector`, `VLM` 생성. 또는 `.env` 의 `CLEARML_LOGIN_PASSWORD` 를 **현재 비밀번호로 고친 뒤** `python3 packaging/ensure-clearml-projects.py` |
+| Grafana 연동(선택) | 위와 같이 키를 발급해 `.env` 의 `CLEARML_ACCESS_KEY` / `CLEARML_SECRET_KEY` 에 넣고 `bash start.sh` 다시 실행 |
+| 재부팅 후 | 컨테이너는 자동으로 다시 뜨지만 **NFS 마운트는 자동으로 붙지 않음** (`/etc/fstab` 미설정). `bash start.sh` 를 다시 실행하거나 `bash mount/scripts/mount_dataset.sh mount`, `bash mount/scripts/mount_generated.sh mount` |
+
+### 1-5. `.env` 를 수정한 뒤
+
+```bash
+cd ~/mlops-mainserver/clearml
+vi .env
+bash start.sh                          # 전체 반영
+bash packaging/apply-env.sh --restart  # IP 만 바꿀 때
+```
+
+### 1-6. 처음부터 다시 시험하기 (초기화)
+
+> `.env`(비밀번호·서명 키), `ssh/`(개인 키), ClearML·Grafana DB 는 **저장소에 없어서 지우면 복구할 수 없습니다.** 지우기 전에 코드 변경은 커밋·push 했는지 확인하세요.
+
+```bash
+# 1) 컨테이너·이미지 정리
+cd ~/mlops-mainserver/clearml
+./compose.sh --profile training-ssh down --remove-orphans
+./monitoring-compose.sh down --remove-orphans
+
+# 2) NFS 마운트 해제 — 반드시 폴더 삭제보다 먼저 (아래 주의 참고)
+sudo umount ~/mlops-mainserver/clearml/data/datasets
+sudo umount ~/mlops-mainserver/clearml/data/generate_datasets
+mount | grep -E "mlops-mainserver|<학습서버IP>"     # 아무것도 나오지 않아야 함
+
+# 3) 폴더 삭제 후 다시 clone
+cd ~ && sudo rm -rf ~/mlops-mainserver
+git clone http://172.16.8.64:1541/woals1626/mlops-mainserver.git
+```
+
+> **마운트를 풀기 전에 폴더를 지우면 학습 서버의 데이터가 지워질 수 있습니다.** 마운트가 읽기·쓰기이므로 `rm -rf` 가 NFS 너머의 파일까지 지웁니다. 2번에서 아무것도 안 나온 것을 확인한 뒤에만 3번을 하세요.
+> 다시 clone 하면 SSH 키가 **새로 만들어지므로**, 학습 서버 `train.env` 의 `MLOPS_SSH_PUBLIC_KEY` 를 새 키로 교체해야 합니다 (③ 과정).
 
 ---
 
@@ -202,7 +314,7 @@ curl -s -o /dev/null -w 'HTTP %{http_code}\n' ${SEOUL_STUDIO_COMFY_URL}/
 ## 5. 자주 쓰는 명령
 
 ```bash
-cd /opt/clearml
+cd ~/mlops-mainserver/clearml
 
 ./compose.sh ps
 ./compose.sh logs -f webserver
@@ -215,6 +327,32 @@ cd /opt/clearml
 ---
 
 ## 6. 문제 해결
+
+**SSH 접속이 `Permission denied (publickey,password)` — 학습 서버가 키를 받아 주지 않음**
+
+1. 학습 서버(`TRAINING_SERVER_USER` 계정)에서 등록된 키 지문을 봅니다: `ssh-keygen -lf ~/.ssh/authorized_keys`
+2. MLOps 서버 키의 지문과 비교합니다: `ssh-keygen -lf ~/mlops-mainserver/clearml/ssh/id_ed25519.pub`
+3. 같은 지문이 없으면 `train.env` 의 `MLOPS_SSH_PUBLIC_KEY` 를 새 공개키로 교체하고 학습 서버 `bash start.sh` 를 다시 실행합니다. (긴 문자열을 눈으로 비교하지 말고 **지문**으로 비교하세요. 앞부분 `ssh-ed25519 AAAAC3...` 은 모든 키가 같습니다.)
+4. 그래도 안 되면 학습 서버에서 `sudo grep sshd /var/log/auth.log | tail` 로 거부 사유를 확인합니다. `~/.ssh` 는 `700`, `authorized_keys` 는 `600` 이어야 합니다.
+5. `TRAINING_SERVER_USER` 가 학습 서버의 실제 계정과 같은지 확인합니다.
+
+**`mkdir: cannot create directory ... Permission denied` / 컨테이너가 시작하자마자 종료**
+
+- 마운트용 폴더를 Docker 가 root 소유로 만들면, root 가 아닌 컨테이너(Elasticsearch, Prometheus, Grafana, access-control)가 쓰지 못합니다. `start.sh` 가 4단계 앞에서 `packaging/prepare-dirs.sh` 로 자동 정리합니다. 수동 실행도 가능: `bash packaging/prepare-dirs.sh`
+- `sudo` 로 `start.sh` 를 실행했거나 `sudo git add` 를 했다면 소유자가 root 로 바뀝니다. `sudo chown -R $USER:$USER ~/mlops-mainserver/.git` 등으로 되돌립니다.
+
+**대시보드에 왼쪽 메뉴·프로젝트가 안 나옴 (`Connection refused` 로그)**
+
+- 웹서버(nginx)는 시작할 때 apiserver 의 IP 를 기억합니다. apiserver 를 다시 만든 뒤에는 웹서버를 재시작해야 합니다: `./compose.sh restart webserver` (`start.sh` 는 자동으로 합니다)
+
+**로그인 화면에서 "MLOps 사용자 인증 연동에 실패했습니다"**
+
+- apiserver 가 안 떠 있거나(`docker logs clearml-apiserver`) 계정이 없는 경우입니다. Elasticsearch 가 죽어 있으면 apiserver 도 못 뜹니다(`docker logs clearml-elastic`).
+
+**대시보드 `TRAINING SERVER` 가 "데이터 지연" / 옛 IP**
+
+- `training-metrics` 서비스가 꺼져 있는 경우입니다: `./compose.sh --profile training-ssh up -d training-metrics` (SSH 접속이 되어야 함)
+- Memory 가 `—` 이면 학습 서버의 `check_metrics.sh` 가 메모리를 0으로 보내는 것입니다 (학습 서버 쪽 스크립트 문제).
 
 **Grafana/Prometheus 재시작 반복 (permission denied)**
 
@@ -254,33 +392,13 @@ bash packaging/pack.sh
 
 ## SSH 원격 학습·테스트
 
-`.env`의 `TRAINING_SSH_*`로 전용 SSH 클라이언트를 설정합니다. 접속 대상(`TRAINING_SSH_HOST`)은
-`TRAINING_SERVER_IP`를 그대로 따르고, `TRAINING_SSH_USER`는 **학습 서버의 로그인 계정**입니다.
+`.env` 의 `TRAINING_SSH_*` 로 전용 SSH 클라이언트를 설정합니다.
+접속 대상(`TRAINING_SSH_HOST`)은 `TRAINING_SERVER_IP`, 계정(`TRAINING_SSH_USER`)은 `TRAINING_SERVER_USER` 를 그대로 따릅니다.
 
-### 가장 쉬운 방법 (자동)
+- **처음 연결**: 위 1장의 ③④ 과정이 곧 SSH 연결입니다. `start.sh` 가 키 생성 → 호스트 키 등록 → 접속 시험까지 합니다.
+- **키 위치**: `clearml/ssh/id_ed25519`(개인 키, 절대 공유 금지), `id_ed25519.pub`, `known_hosts`. 저장소에는 올라가지 않습니다.
+- **컨테이너 UID**: 컨테이너가 키를 읽으려면 키 소유자와 `.env` 의 `TRAINING_SSH_UID/GID` 가 같아야 합니다. `start.sh` 가 키 소유자에 맞춰 자동으로 설정합니다. 값이 바뀌면 이미지를 다시 빌드하세요: `./compose.sh --profile training-ssh build training-ssh`
+- **확인 / 실행**: `bash training-ssh.sh doctor`, 학습은 `doctor` 대신 `detector` 또는 `vlm` 을 지정합니다.
+- **지표 수집**: `training-metrics` 서비스가 5초마다 학습 서버의 `check_metrics.sh` 를 SSH 로 실행해 `branding/training-metrics.json` 을 갱신합니다. 이 파일은 서버가 자동으로 만드는 파일이라 저장소에 올리지 않습니다 (`.gitignore`).
 
-`.env`만 채우고 터미널에서 `bash start.sh` 를 실행합니다. 학습 서버 쪽 작업이 필요하면 물어보고 SSH 로 대신 합니다.
-
-- 키가 학습 서버에 등록되어 있지 않으면 → 공개키 자동 등록을 제안합니다 (학습 서버 비밀번호 1회)
-- 학습 서버 NFS(2049)가 열려 있지 않으면 → `train.env` 값을 채우고 `export_dataset.sh setup` 을 SSH 로 실행하도록 제안합니다 (sudo 비밀번호 입력)
-- 학습 서버 작업을 원하지 않으면 `bash start.sh --no-remote-setup`. 단독 실행은 `bash packaging/bootstrap-training-server.sh key|nfs|all [--dry-run]`
-
-### 수동으로 하는 순서
-
-| 순서 | 서버 | 할 일 | 확인 |
-|---|---|---|---|
-| 1 | MLOps | `.env` 작성 후 `bash packaging/gen-ssh-key.sh` — 공개키 한 줄 출력 | 지문: `ssh-keygen -lf ssh/id_ed25519.pub` |
-| 2 | 학습 | `train.env`의 `MLOPS_SSH_PUBLIC_KEY`에 그 줄 입력 → `install-key`, `export_dataset.sh setup` | **`ssh-keygen -lf ~/.ssh/authorized_keys` 에 1번의 지문이 있어야 함** |
-| 3 | MLOps | `ssh-keyscan -p <포트> -H <학습서버IP> >> ssh/known_hosts` | `ssh-keygen -lf ssh/known_hosts` |
-| 4 | MLOps | `bash start.sh` — SSH 접속을 시험하고, 실패하면 조치 명령을 출력 | `bash training-ssh.sh doctor` |
-| 5 | MLOps | `./compose.sh --profile training-ssh up -d` — 지표 수집(`training-metrics`) 시작 | 대시보드 `TRAINING SERVER` 헤더 |
-
-- `train.env`에 키를 적는 것과 `authorized_keys`에 들어가는 것은 별개입니다. 2번 확인을 건너뛰면
-  `Permission denied (publickey,password)` 로 막힙니다. `install-key`가 등록하지 못하면
-  `echo '<공개키 한 줄>' >> ~/.ssh/authorized_keys` 로 직접 덧붙이세요(`.ssh` 700, `authorized_keys` 600).
-- `sudo bash start.sh` 나 `sudo bash training-ssh.sh` 로 실행하지 마세요. 키 소유자와 컨테이너 UID 가 어긋납니다.
-  `start.sh`가 키 소유자에 맞춰 `TRAINING_SSH_UID/GID`를 설정하며, 값이 바뀌면
-  `bash compose.sh --profile training-ssh build training-ssh`로 이미지를 다시 빌드합니다.
-
-학습은 `doctor` 대신 `detector` 또는 `vlm`을 지정합니다.
 키 인증, 상태·로그 조회, 테스트 경로 설정은 [SSH 실행 가이드](training_ssh/README.md)를 참고하세요.
