@@ -61,6 +61,9 @@ fix_owner "${CLEARML_DIR}/access_control/data"    1000:999      # access-control
 fix_group "${CLEARML_DIR}/config"                 999           # access-control → fixed-users.json
 fix_owner "${CLEARML_DIR}/monitoring/data/prometheus" 65534:65534
 fix_owner "${CLEARML_DIR}/monitoring/data/grafana"    472:472
+# annotation-api(training-ssh 프로필)는 TRAINING_SSH_UID:GID 로 실행되며 이 폴더에 배포 이력을 쓴다
+_ssh_ids="$(set -a; . "${CLEARML_DIR}/.env" 2>/dev/null; echo "${TRAINING_SSH_UID:-$(id -u)}:${TRAINING_SSH_GID:-$(id -g)}")"
+fix_owner "${CLEARML_DIR}/training_ssh/data"           "$_ssh_ids"
 
 # 지표 파일: 저장소에는 없다. 파일이 없으면 Docker 가 같은 이름의 "폴더"를 만들어 버리므로 빈 초기값을 미리 만들어 둔다.
 metrics="${CLEARML_DIR}/branding/training-metrics.json"

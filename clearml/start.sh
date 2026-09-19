@@ -283,10 +283,11 @@ step "웹서버 재시작 (apiserver 주소 갱신)"
 ./compose.sh restart webserver >/dev/null 2>&1 && ok "webserver 재시작" || warn "webserver 재시작 실패 — 수동: ./compose.sh restart webserver"
 
 # ── 학습 서버 지표 수집 (SSH 접속이 확인된 경우에만) ──────────────────────
-step "학습 서버 지표 수집 (training-metrics)"
+step "학습 서버 연동 서비스 (training-metrics · annotation-api)"
 if [ "$SSH_OK" = 1 ]; then
-    ./compose.sh --profile training-ssh up -d --build training-metrics
+    ./compose.sh --profile training-ssh up -d --build training-metrics annotation-api
     ok "training-metrics 기동 — 대시보드의 TRAINING SERVER 지표가 5초마다 갱신됩니다"
+    ok "annotation-api 기동 — 학습 화면(/train/)의 Dataset 폴더·라벨·배포 기능이 사용됩니다"
 else
     warn "학습 서버 SSH 접속이 확인되지 않아 건너뜀 — 접속을 맞춘 뒤 start.sh 를 다시 실행하세요"
 fi
