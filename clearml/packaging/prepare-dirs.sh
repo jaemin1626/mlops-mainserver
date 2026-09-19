@@ -16,9 +16,19 @@ ok()   { echo -e "  ${GRN}✓${NC} $*"; }
 warn() { echo -e "  ${YEL}!${NC} $*"; }
 
 # chown 은 root 권한이 필요하므로 docker(alpine)로 수행한다 — sudo 비밀번호 불필요
+# 상위 폴더(data 등)가 root 소유라 mkdir 이 안 되면, 그 폴더 자체(하위 제외)만 현재 사용자 소유로 바꾼다.
+# 마운트 스크립트가 sudo mkdir -p 로 data/ 를 root 소유로 만드는 경우가 있다.
+make_dir() {   # <경로>
+    local path="$1" parent
+    mkdir -p "$path" 2>/dev/null && return 0
+    parent="$(dirname "$path")"
+    docker run --rm -v "${parent}:/p" alpine chown "$(id -u):$(id -g)" /p >/dev/null 2>&1 || true
+    mkdir -p "$path"
+}
+
 fix_owner() {   # <경로> <uid:gid> [chmod 모드]
     local path="$1" owner="$2" mode="${3:-}"
-    mkdir -p "$path"
+    make_dir "$path"
     local cur; cur="$(stat -c '%u:%g' "$path")"
     if [ "$cur" = "$owner" ] && { [ -z "$mode" ] || [ "$(stat -c '%a' "$path")" = "$mode" ]; }; then
         return 0
@@ -35,7 +45,7 @@ fix_owner() {   # <경로> <uid:gid> [chmod 모드]
 # config: 소유자는 유지하고 access-control(gid 999)만 쓸 수 있게 그룹 권한을 준다
 fix_group() {   # <경로> <gid>
     local path="$1" gid="$2"
-    mkdir -p "$path"
+    make_dir "$path"
     if [ "$(stat -c '%g' "$path")" = "$gid" ] && [ "$(stat -c '%a' "$path")" = 775 ]; then
         return 0
     fi
@@ -51,3 +61,10 @@ fix_owner "${CLEARML_DIR}/access_control/data"    1000:999      # access-control
 fix_group "${CLEARML_DIR}/config"                 999           # access-control → fixed-users.json
 fix_owner "${CLEARML_DIR}/monitoring/data/prometheus" 65534:65534
 fix_owner "${CLEARML_DIR}/monitoring/data/grafana"    472:472
+
+# 지표 파일: 저장소에는 없다. 파일이 없으면 Docker 가 같은 이름의 "폴더"를 만들어 버리므로 빈 초기값을 미리 만들어 둔다.
+metrics="${CLEARML_DIR}/branding/training-metrics.json"
+if [ ! -e "$metrics" ]; then
+    echo '{"ok": false, "error": "수집 전"}' > "$metrics"
+    ok "branding/training-metrics.json 초기 파일 생성"
+fi

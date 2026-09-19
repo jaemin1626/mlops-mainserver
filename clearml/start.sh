@@ -55,6 +55,8 @@ run_root() {
 
 # ── 1/6 .env (서명 키 · 주소 · 파생 URL) ─────────────────────────────────
 step "1/6 환경 설정 (.env)"
+# NFS 마운트 스크립트가 sudo 로 data/ 를 만들면 root 소유가 되므로, 먼저 현재 사용자 소유로 만들어 둔다
+mkdir -p "${ROOT}/data"
 if [ ! -f "${ROOT}/.env" ]; then
     if [ -f "${ROOT}/.env.example" ]; then
         cp "${ROOT}/.env.example" "${ROOT}/.env"
@@ -135,12 +137,14 @@ check_training_ssh() {
         echo "      ssh-keyscan -p ${port} -H ${host} >> ${khosts}"
         return 1
     elif echo "$out" | grep -qi "permission denied"; then
-        warn "학습 서버가 이 키를 받아 주지 않습니다 (${user}@${host}). 학습 서버의 ${user} 계정에서 실행:"
-        echo "      mkdir -p ~/.ssh && chmod 700 ~/.ssh"
-        echo "      echo '$(cat "${key}.pub")' >> ~/.ssh/authorized_keys"
-        echo "      chmod 600 ~/.ssh/authorized_keys"
-        echo "      ssh-keygen -lf ~/.ssh/authorized_keys   # 아래 지문이 보여야 함"
+        warn "학습 서버가 이 키를 받아 주지 않습니다 (${user}@${host}). 이 서버의 키 지문:"
         echo "      $(ssh-keygen -lf "${key}.pub" | awk '{print $2}')"
+        echo "    [권장] 학습 서버의 mount/config/train.env 의 MLOPS_SSH_PUBLIC_KEY 를 아래 한 줄로 바꾸고 bash start.sh 재실행"
+        echo "      $(cat "${key}.pub")"
+        echo "    (학습 서버 start.sh 가 접속 IP 제한(restrict,from=)을 붙여 등록합니다)"
+        echo "    [대안] 학습 서버의 ${user} 계정에서 직접 추가:"
+        echo "      mkdir -p ~/.ssh && chmod 700 ~/.ssh"
+        echo "      echo '$(cat "${key}.pub")' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
         echo "    (TRAINING_SSH_USER=${user} 가 학습 서버의 실제 계정과 같은지도 확인)"
         return 1
     else
@@ -149,6 +153,12 @@ check_training_ssh() {
     fi
 }
 if [ -n "$SSH_KEY_DIR" ]; then
+    # 학습 서버 호스트 키가 known_hosts 에 없으면 지문을 보여 주고 등록 (새로 clone 한 직후에는 항상 없다)
+    _khost="$(set -a; . "${ROOT}/.env"; echo "${TRAINING_SSH_HOST:-${TRAINING_SERVER_IP:-}}")"
+    if [ -n "$_khost" ] && [ "$SKIP_REMOTE" = 0 ] && [ -t 0 ] \
+        && ! ssh-keygen -F "$_khost" -f "${SSH_KEY_DIR}/known_hosts" >/dev/null 2>&1; then
+        bash "${ROOT}/packaging/bootstrap-training-server.sh" hostkey || warn "호스트 키 등록을 건너뜀"
+    fi
     if ! check_training_ssh && [ "$SKIP_REMOTE" = 0 ] && [ -t 0 ]; then
         echo ""
         echo "  학습 서버 세팅을 어떻게 할까요?"
@@ -159,7 +169,8 @@ if [ -n "$SSH_KEY_DIR" ]; then
         case "${_choice:-3}" in
             1) bash "${ROOT}/packaging/bootstrap-training-server.sh" key || warn "자동 등록 실패 — 위 수동 명령을 사용하세요" ;;
             2) echo ""
-               echo "  학습 서버에서 bash start.sh 를 실행하고, 공개키를 물어보면 아래 한 줄을 붙여 넣으세요:"
+               echo "  학습 서버에서 아래 한 줄을 mount/config/train.env 의 MLOPS_SSH_PUBLIC_KEY 값으로 넣고 (이미 다른 키가 있으면 교체)"
+               echo "  bash start.sh 를 실행하세요. (train.env 에 키가 비어 있으면 실행 중에 붙여 넣으라고 묻습니다)"
                echo "    $(cat "${SSH_KEY_DIR}/id_ed25519.pub")"
                echo "  (학습 서버의 MLOps IP·루트 경로는 이 서버 .env 의 CLEARML_SERVER_IP / MLOPS_ROOT 와 같아야 합니다)"
                read -r -p "  학습 서버 세팅을 마쳤으면 Enter > " _ ;;
@@ -168,6 +179,10 @@ if [ -n "$SSH_KEY_DIR" ]; then
         check_training_ssh || true
     fi
 fi
+
+# 이후 단계(지표 수집 서비스 기동)에서 쓸 SSH 접속 결과
+SSH_OK=0
+if [ -n "$SSH_KEY_DIR" ]; then check_training_ssh >/dev/null 2>&1 && SSH_OK=1 || true; fi
 
 # ── 3/6 NFS 마운트 (Dataset + 생성형 결과) ───────────────────────────────
 step "3/6 NFS mount (실패해도 다음 단계 진행)"
@@ -227,6 +242,20 @@ else
             python3 "${ROOT}/packaging/ensure-clearml-projects.py" || true
         fi
     fi
+fi
+
+# webserver(nginx)는 시작할 때 apiserver 의 IP 를 기억한다.
+# 위에서 apiserver 가 (설정 변경·관리자 생성으로) 다시 만들어졌을 수 있으므로, 항상 웹서버를 재시작해 새 IP 를 알게 한다.
+step "웹서버 재시작 (apiserver 주소 갱신)"
+./compose.sh restart webserver >/dev/null 2>&1 && ok "webserver 재시작" || warn "webserver 재시작 실패 — 수동: ./compose.sh restart webserver"
+
+# ── 학습 서버 지표 수집 (SSH 접속이 확인된 경우에만) ──────────────────────
+step "학습 서버 지표 수집 (training-metrics)"
+if [ "$SSH_OK" = 1 ]; then
+    ./compose.sh --profile training-ssh up -d --build training-metrics
+    ok "training-metrics 기동 — 대시보드의 TRAINING SERVER 지표가 5초마다 갱신됩니다"
+else
+    warn "학습 서버 SSH 접속이 확인되지 않아 건너뜀 — 접속을 맞춘 뒤 start.sh 를 다시 실행하세요"
 fi
 
 # ── 5/6 Data Studio · Seoul Studio 재기동 (마운트/설정 반영) ─────────────

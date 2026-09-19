@@ -5,6 +5,7 @@
 #     ./bootstrap-training-server.sh key            # 공개키 등록 (학습 서버 비밀번호 1회 입력)
 #     ./bootstrap-training-server.sh nfs            # train.env 값 채우기 + export_dataset.sh setup (sudo 비밀번호 입력)
 #     ./bootstrap-training-server.sh all            # key → nfs
+#     ./bootstrap-training-server.sh hostkey        # 학습 서버 호스트 키만 known_hosts 에 등록 (지문 확인 후 y)
 #     ./bootstrap-training-server.sh nfs --dry-run  # 학습 서버에서 실행할 명령만 출력
 #
 #   필요한 값은 모두 .env 에서 읽는다 (TRAINING_SSH_*, TRAINING_ROOT, MLOPS_ROOT, CLEARML_SERVER_IP).
@@ -23,7 +24,7 @@ die()  { echo -e "  ${RED}✗ $*${NC}" >&2; exit 1; }
 MODE="${1:-all}"; shift || true
 DRY=0
 for a in "$@"; do [ "$a" = "--dry-run" ] && DRY=1; done
-case "$MODE" in key|nfs|all) ;; -h|--help) sed -n '2,12p' "$0"; exit 0 ;; *) die "사용법: $0 key|nfs|all [--dry-run]" ;; esac
+case "$MODE" in key|nfs|all|hostkey) ;; -h|--help) sed -n '2,13p' "$0"; exit 0 ;; *) die "사용법: $0 key|nfs|all|hostkey [--dry-run]" ;; esac
 
 [ -f "$ENV_FILE" ] || die "${ENV_FILE} 없음"
 # shellcheck disable=SC1090
@@ -91,6 +92,7 @@ R
 }
 
 case "$MODE" in
+    hostkey) ensure_host_key ;;
     key) do_key ;;
     nfs) do_nfs ;;
     all) do_key; do_nfs ;;

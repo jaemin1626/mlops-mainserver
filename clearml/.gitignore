@@ -31,3 +31,6 @@ data-studio/.env.*
 data-studio/npm-debug.log*
 data-studio/version_bak/
 .
+# 실행 중 서버가 자동으로 만들고 갱신하는 파일 (계정 해시·수집 지표) — 저장소에 올리지 않는다
+branding/training-metrics.json
+config/fixed-users.json
