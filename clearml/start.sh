@@ -320,6 +320,16 @@ echo "  Seoul Studio: http://${HOST_IP}:8080/seoul-studio/"
 echo "  Grafana     : http://${HOST_IP}:${GRAFANA_PORT}/d/clearml-mlops-main"
 echo "  Dataset path: ${DATASET_PATH}"
 echo "  Generated path: ${GENERATED_PATH}"
+if [ "$SSH_OK" = 1 ]; then
+    echo "  학습 서버 SSH: ${TR_USER}@${TR_HOST} 연결됨"
+    _KEYSTATE="$(python3 "${ROOT}/packaging/provision-training-credentials.py" --check 2>/dev/null | head -1 || true)"
+    case "$_KEYSTATE" in
+        *"이미 있음"*) echo "  ClearML API 키: 학습 서버에 등록됨" ;;
+        *"비어 있음"*) echo "  ClearML API 키: 학습 서버에 아직 없음 → 웹 Settings > Workspace 에서 발급해 학습 서버 ./scripts/config.sh setup-clearml" ;;
+    esac
+else
+    echo "  학습 서버 SSH: 연결 안 됨 (start.sh 를 다시 실행해 연결)"
+fi
 echo "=================================================="
 bash "${ROOT}/mount/scripts/mount_dataset.sh" status 2>/dev/null || true
 echo ""

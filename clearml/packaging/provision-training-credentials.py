@@ -93,7 +93,7 @@ def main():
         print("  ! 학습 서버에 mount/config/train.env 가 없습니다 — 학습 서버 start.sh 를 먼저 실행하세요")
         return 0
     if state == "SET":
-        print("  ✓ 학습 서버에 ClearML API 키가 이미 있음 — 건너뜀")
+        print("  ✓ 학습 서버 train.env 에 ClearML API 키가 이미 있음 — 발급하지 않고 건너뜀")
         return 0
     if check_only:
         print("  · 학습 서버 train.env 의 ClearML API 키가 비어 있음 (실행하면 발급해서 넣습니다)")
@@ -108,8 +108,10 @@ def main():
     basic = base64.b64encode(f"{user}:{password}".encode()).decode()
     try:
         token = api(base, "auth.login", {"expiration_sec": 600}, {"Authorization": "Basic " + basic})["data"]["token"]
+        print(f"  ✓ ClearML 로그인: {user} ({base})")
         cred = api(base, "auth.create_credentials", {"label": LABEL}, {"Authorization": "Bearer " + token})["data"]["credentials"]
         access, secret = cred["access_key"], cred["secret_key"]
+        print(f"  ✓ ClearML API 키 발급: 라벨 {LABEL}, access {access[:4]}…")
     except urllib.error.HTTPError as exc:
         if exc.code == 401:
             print("  ! ClearML 로그인 실패(401) — 비밀번호를 바꿨다면 .env 의 CLEARML_LOGIN_PASSWORD 를 새 값으로 고치고 다시 실행하세요")
@@ -128,12 +130,22 @@ def main():
              "setv() { if grep -q \"^$1=\" \"$f\"; then sed -i \"s|^$1=.*|$1=$2|\" \"$f\"; else echo \"$1=$2\" >> \"$f\"; fi; }; "
              "setv CLEARML_API_ACCESS_KEY \"$ACCESS\"; setv CLEARML_API_SECRET_KEY \"$SECRET\"; "
              "./scripts/config.sh apply")
+    target = f"{env['TRAINING_SSH_USER']}@{env['TRAINING_SSH_HOST']}:{env['TRAINING_SSH_ROOT']}/mount/config/train.env"
     res = ssh(env, write, stdin=f"{access}\n{secret}\n")
     if res.returncode != 0:
         print("  ! 학습 서버에 키를 쓰지 못했습니다:", (res.stderr or res.stdout).strip().splitlines()[-1:] or "알 수 없음")
         print("    (웹 Settings → Workspace 에서 발급해 학습 서버 ./scripts/config.sh setup-clearml 로 등록하세요)")
         return 0
-    print(f"  ✓ ClearML API 키 발급({LABEL}, access {access[:4]}…) → 학습 서버 train.env 에 저장하고 config.sh apply 실행")
+    print(f"  ✓ 학습 서버 train.env 에 CLEARML_API_ACCESS_KEY / CLEARML_API_SECRET_KEY 저장 ({target})")
+    print("  ✓ 학습 서버 ./scripts/config.sh apply 실행 (ClearML 설정 반영)")
+
+    # 발급한 키로 실제 인증이 되는지 확인
+    try:
+        b = base64.b64encode(f"{access}:{secret}".encode()).decode()
+        api(base, "auth.login", {"expiration_sec": 60}, {"Authorization": "Basic " + b})
+        print("  ✓ 확인: 발급한 키로 ClearML 인증 성공 → 학습 서버의 Task 가 ClearML 에 연결됩니다")
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        print(f"  ! 발급한 키 인증 확인 실패: {exc} — 학습 서버 설정은 저장됐으니 ClearML 상태를 확인하세요")
     return 0
 
 
