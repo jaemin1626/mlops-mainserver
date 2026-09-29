@@ -142,7 +142,7 @@
     adminScript.onload = function () {
       var script = document.createElement('script');
       script.id = 'ivx-sidebar-js';
-      script.src = '/ivx-sidebar.js?v=train-perm-1';
+      script.src = '/ivx-sidebar.js?v=sidebar-mat-tooltip-3';
       head.appendChild(script);
     };
     head.appendChild(adminScript);

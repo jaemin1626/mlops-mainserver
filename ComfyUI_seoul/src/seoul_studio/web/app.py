@@ -38,6 +38,10 @@ from seoul_studio.video_anonymize import (
 )
 from seoul_studio.training_guard import TRAINING_BLOCK_MESSAGE, is_training_active
 from seoul_studio.presets import aspect_ratio_options, duration_options, resolution_options
+from seoul_studio.prompt_assist import (
+    PromptAssistError,
+    assist as run_prompt_assist,
+)
 from seoul_studio.web.anonymize_runner import AnonymizeJobBusyError, AnonymizeJobRunner
 from seoul_studio.web.export_runner import ExportJobBusyError, ExportJobRunner
 from seoul_studio.web.job_runner import JobBusyError, JobRunner
@@ -101,6 +105,11 @@ class ExportBody(BaseModel):
     folder_name: str = ""
     anonymize: bool = False
     classes: list[int] | None = None
+
+
+class PromptAssistBody(BaseModel):
+    intent_ko: str
+    scenario: str = "generic"
 
 
 def _config_path() -> Path:
@@ -396,6 +405,18 @@ def create_app(generate_fn: Optional[Callable] = None) -> FastAPI:
                 "default_imgsz": default_imgsz(),
             },
         }
+
+    @app.post("/api/prompt-assist")
+    def prompt_assist(body: PromptAssistBody) -> dict:
+        try:
+            result = run_prompt_assist(body.intent_ko, body.scenario)
+            return {
+                "positive": result["positive"],
+                "negative": result["negative"],
+                "scenario": result.get("scenario"),
+            }
+        except PromptAssistError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.put("/api/settings")
     def update_settings(body: SettingsBody) -> dict:

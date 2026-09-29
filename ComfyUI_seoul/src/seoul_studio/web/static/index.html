@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Intellivix Video Studio</title>
   <base href="__SEOUL_STUDIO_BASE__/">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="static/fonts/pretendard/pretendard.css">
   <link rel="stylesheet" href="static/style.css">
 </head>
 <body>
@@ -45,7 +45,10 @@
         </div>
 
         <div class="field" id="field-prompt">
-          <label class="field-label" for="i2v-prompt">입력 프롬프트</label>
+          <div class="field-label-row">
+            <label class="field-label" for="i2v-prompt">입력 프롬프트</label>
+            <button type="button" id="prompt-assist-open" class="btn btn-secondary btn-compact">AI 초안</button>
+          </div>
           <textarea id="i2v-prompt" rows="4" placeholder="example: the person starts walking forward slowly"></textarea>
           <p id="error-prompt" class="field-error-msg" hidden></p>
         </div>
@@ -333,6 +336,40 @@
         <div class="send-to-task-actions">
           <button type="button" id="send-to-task-cancel" class="btn btn-ghost">취소</button>
           <button type="button" id="send-to-task-confirm" class="btn btn-primary">시작</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="prompt-assist-backdrop" class="drawer-backdrop" hidden></div>
+    <div id="prompt-assist-modal" class="send-to-task-modal" hidden role="dialog" aria-modal="true" aria-labelledby="prompt-assist-title">
+      <div class="send-to-task-panel glass-card prompt-assist-panel">
+        <h2 id="prompt-assist-title">AI 프롬프트 초안</h2>
+        <p id="prompt-assist-hint" class="hint send-to-task-summary">
+          한글로 장면을 설명하면 고정 형식의 영문 I2V 프롬프트 초안을 만듭니다. 적용 전에 내용을 확인하세요.
+        </p>
+
+        <div class="field">
+          <span class="field-label">시나리오 (선택)</span>
+          <div class="prompt-assist-scenarios" role="group" aria-label="시나리오">
+            <label class="radio-row"><input type="radio" name="prompt-assist-scenario" value="generic" checked><span>일반</span></label>
+            <label class="radio-row"><input type="radio" name="prompt-assist-scenario" value="fire"><span>화재</span></label>
+            <label class="radio-row"><input type="radio" name="prompt-assist-scenario" value="smoke"><span>연기</span></label>
+            <label class="radio-row"><input type="radio" name="prompt-assist-scenario" value="person"><span>사람</span></label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="prompt-assist-intent">장면 설명 (한글)</label>
+          <textarea id="prompt-assist-intent" rows="4" placeholder="예: 공장 CCTV 고정 화각, 처음엔 정상 가동, 잠시 후 바닥 근처에서 작은 불꽃이 보임"></textarea>
+        </div>
+
+        <p id="prompt-assist-status" class="hint" hidden></p>
+        <pre id="prompt-assist-preview" class="prompt-assist-preview" hidden></pre>
+
+        <div class="send-to-task-actions">
+          <button type="button" id="prompt-assist-cancel" class="btn btn-ghost">취소</button>
+          <button type="button" id="prompt-assist-generate" class="btn btn-secondary">생성</button>
+          <button type="button" id="prompt-assist-apply" class="btn btn-primary" disabled>적용</button>
         </div>
       </div>
     </div>

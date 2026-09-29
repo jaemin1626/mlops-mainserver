@@ -38,6 +38,7 @@ let settingsBrowsePath = "";
 let libraryBrowsePath = "";
 let libraryMediaFilter = "all";
 let exportJobAnonymizing = false;
+let promptAssistDraft = null;
 let libraryCurrentItems = [];
 let librarySelectedPaths = new Set();
 let sendToTaskPaths = [];
@@ -856,6 +857,102 @@ function closeSendToTaskModal() {
   sendToTaskPaths = [];
   document.getElementById("send-to-task-backdrop").hidden = true;
   document.getElementById("send-to-task-modal").hidden = true;
+}
+
+function selectedPromptAssistScenario() {
+  const picked = document.querySelector('input[name="prompt-assist-scenario"]:checked');
+  return picked ? picked.value : "generic";
+}
+
+function setPromptAssistStatus(message, tone = "idle") {
+  const el = document.getElementById("prompt-assist-status");
+  if (!message) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  el.hidden = false;
+  el.textContent = message;
+  el.style.color = tone === "error" ? "#f87171" : tone === "success" ? "#86efac" : "";
+}
+
+function renderPromptAssistPreview(draft) {
+  const preview = document.getElementById("prompt-assist-preview");
+  if (!draft) {
+    preview.hidden = true;
+    preview.textContent = "";
+    document.getElementById("prompt-assist-apply").disabled = true;
+    return;
+  }
+  preview.hidden = false;
+  preview.textContent = `${draft.positive}\n\n[negative prompt]\n${draft.negative}`;
+  document.getElementById("prompt-assist-apply").disabled = false;
+}
+
+function openPromptAssistModal() {
+  if (!canMutateOutputs) {
+    setStatus(mutationDeniedMessage(), "error");
+    return;
+  }
+  promptAssistDraft = null;
+  document.getElementById("prompt-assist-intent").value = "";
+  document.querySelector('input[name="prompt-assist-scenario"][value="generic"]').checked = true;
+  setPromptAssistStatus("");
+  renderPromptAssistPreview(null);
+  document.getElementById("prompt-assist-backdrop").hidden = false;
+  document.getElementById("prompt-assist-modal").hidden = false;
+  document.getElementById("prompt-assist-intent").focus();
+}
+
+function closePromptAssistModal() {
+  promptAssistDraft = null;
+  document.getElementById("prompt-assist-backdrop").hidden = true;
+  document.getElementById("prompt-assist-modal").hidden = true;
+}
+
+async function generatePromptAssistDraft() {
+  if (!canMutateOutputs) {
+    setPromptAssistStatus(mutationDeniedMessage(), "error");
+    return;
+  }
+  const intent = document.getElementById("prompt-assist-intent").value.trim();
+  if (!intent) {
+    setPromptAssistStatus("한글로 장면 설명을 입력해 주세요.", "error");
+    return;
+  }
+  const generateBtn = document.getElementById("prompt-assist-generate");
+  generateBtn.disabled = true;
+  setPromptAssistStatus("초안을 생성하는 중…");
+  try {
+    const result = await api("/api/prompt-assist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        intent_ko: intent,
+        scenario: selectedPromptAssistScenario(),
+      }),
+    });
+    promptAssistDraft = result;
+    renderPromptAssistPreview(result);
+    setPromptAssistStatus("생성 완료. 미리보기를 확인한 뒤 적용하세요.", "success");
+  } catch (err) {
+    promptAssistDraft = null;
+    renderPromptAssistPreview(null);
+    setPromptAssistStatus(err.message, "error");
+  } finally {
+    generateBtn.disabled = false;
+  }
+}
+
+function applyPromptAssistDraft() {
+  if (!promptAssistDraft) {
+    return;
+  }
+  document.getElementById("i2v-prompt").value = promptAssistDraft.positive;
+  document.getElementById("negative-prompt").value = promptAssistDraft.negative;
+  setFieldError("field-prompt", "error-prompt", "");
+  closePromptAssistModal();
+  setStatus("AI 초안을 프롬프트에 적용했습니다.", "success");
 }
 
 async function submitSendToTask() {
@@ -1775,6 +1872,13 @@ document.getElementById("export-class-plate").addEventListener("click", (event) 
 document.getElementById("export-anonymize").addEventListener("change", updateSendToTaskModal);
 document.getElementById("send-to-task-cancel").addEventListener("click", closeSendToTaskModal);
 document.getElementById("send-to-task-backdrop").addEventListener("click", closeSendToTaskModal);
+document.getElementById("prompt-assist-open").addEventListener("click", openPromptAssistModal);
+document.getElementById("prompt-assist-cancel").addEventListener("click", closePromptAssistModal);
+document.getElementById("prompt-assist-backdrop").addEventListener("click", closePromptAssistModal);
+document.getElementById("prompt-assist-generate").addEventListener("click", () => {
+  generatePromptAssistDraft().catch((err) => setPromptAssistStatus(err.message, "error"));
+});
+document.getElementById("prompt-assist-apply").addEventListener("click", applyPromptAssistDraft);
 document.getElementById("send-to-task-confirm").addEventListener("click", () => {
   submitSendToTask().catch((err) => setStatus(err.message, "error"));
 });
@@ -1801,6 +1905,11 @@ function applyMutationPermission(me) {
   }
   if (canMutateOutputs) {
     return;
+  }
+  const assistOpen = document.getElementById("prompt-assist-open");
+  if (assistOpen) {
+    assistOpen.disabled = true;
+    assistOpen.title = mutationDeniedMessage();
   }
   const button = document.getElementById("generate");
   button.disabled = true;

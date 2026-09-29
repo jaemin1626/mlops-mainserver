@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>데이터 준비 · Intellivix MLOps</title>
+  <link rel="stylesheet" href="/app/webapp-common/assets/fonts/heebo.css">
+  <link rel="stylesheet" href="/prepare/style.css?v=5">
+</head>
+<body>
+<header class="top">
+  <div>
+    <span class="eyebrow">INTELLIVIX MLOPS / PREPARE</span>
+    <h1>데이터 준비</h1>
+    <p>영상 생성·선택 → 비식별화·프레임 추출 → Data Studio 라벨링까지 이어집니다.</p>
+  </div>
+  <a class="close" href="/dashboard" aria-label="닫기" id="prepare-close">✕</a>
+</header>
+<main>
+  <nav class="steps" aria-label="데이터 준비 단계">
+    <a href="#project"><b>01</b><span>프로젝트 · 대상<small>Detector 또는 VLM</small></span></a>
+    <a href="#source"><b>02</b><span>원본 영상<small>생성 또는 브라우저</small></span></a>
+    <a href="#handoff"><b>03</b><span>작업 전달<small>추출 · 비식별화</small></span></a>
+    <a href="#result"><b>04</b><span>전달 결과<small>저장 경로 확인</small></span></a>
+    <a href="#label"><b>05</b><span>라벨링<small>Data Studio</small></span></a>
+    <div class="tip">JSON 병합은 Train의 annotation 자동 생성에서 처리합니다.<br>작업 단계에서는 jpg+json(또는 txt)만 유지하면 됩니다.</div>
+  </nav>
+  <div id="prepare-form">
+    <section id="project">
+      <div class="section-head"><h2>프로젝트 · 대상</h2><span class="tag">PROJECT</span></div>
+      <div class="models">
+        <button type="button" id="target-detector" data-target="detector" aria-pressed="true">▣ Detector<small>프레임 추출 → 박스 라벨</small></button>
+        <button type="button" id="target-vlm" data-target="vlm" aria-pressed="false">✦ VLM<small>영상 또는 이미지 + JSON</small></button>
+      </div>
+      <label>프로젝트 폴더명 (slug)
+        <input id="project-slug" type="text" maxlength="80" pattern="[A-Za-z0-9가-힣][A-Za-z0-9가-힣._-]*" placeholder="예: tunnel-fire-202603">
+        <span class="field-help">버튼으로 만드는 폴더는 항상 <code>generate_datasets</code> 바로 아래에 생성됩니다(브라우저에서 들어가 둔 하위 경로와 무관). Video Studio 저장 위치·handoff 폴더명에도 씁니다.</span>
+      </label>
+      <div class="actions">
+        <button type="button" id="apply-project-folder" class="secondary">generate_datasets에 폴더 만들기 · 저장 위치로 지정</button>
+      </div>
+      <p id="project-status" class="prepare-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="source">
+      <div class="section-head"><h2>원본 영상</h2><span class="tag">SOURCE</span></div>
+      <div class="prepare-source-tabs" role="tablist">
+        <button type="button" id="tab-browse" role="tab" aria-selected="true">브라우저에서 선택</button>
+        <button type="button" id="tab-generate" role="tab" aria-selected="false">이미지 → 영상 생성</button>
+      </div>
+      <div id="panel-browse">
+        <div class="browse-toolbar">
+          <button type="button" id="browse-up" disabled>↩ 상위</button>
+          <button type="button" id="browse-refresh">↻ 새로고침</button>
+        </div>
+        <p class="prepare-path-banner">현재 경로<br><code id="browse-path">generate_datasets</code></p>
+        <div id="browse-subfolders" class="dataset-tree" aria-label="하위 폴더"></div>
+        <p class="field-help">영상 파일을 체크하세요. (최대 50개)</p>
+        <div id="browse-videos" class="video-list" aria-live="polite"></div>
+        <p id="browse-status" class="prepare-status" role="status" aria-live="polite"></p>
+      </div>
+      <div id="panel-generate" hidden>
+        <div class="generate-panel">
+          <p>ComfyUI로 영상을 생성한 뒤 <strong>브라우저에서 선택</strong> 탭으로 돌아와 전달하세요.</p>
+          <p style="margin-top:12px"><a id="link-seoul-create" href="/seoul-studio/" target="_blank" rel="noopener">Video Studio · 이미지 → 영상 열기 ↗</a></p>
+          <p class="hint" style="margin-top:10px">저장 폴더는 01단계 프로젝트 slug와 맞추는 것을 권장합니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="handoff">
+      <div class="section-head"><h2>Data Studio로 전달</h2><span class="tag">HANDOFF</span></div>
+      <label id="field-vlm-media" hidden>전달 형식
+        <select id="vlm-media-kind">
+          <option value="video">영상 파일</option>
+          <option value="image">프레임(이미지) 추출</option>
+        </select>
+      </label>
+      <label id="field-frame-interval">프레임 추출 간격 (N 프레임마다 1장)
+        <input id="frame-interval" type="number" min="1" max="10000" value="30">
+      </label>
+      <label>작업 폴더명
+        <input id="handoff-folder-name" type="text" maxlength="120" placeholder="프로젝트 slug와 동일 권장">
+      </label>
+      <label class="check"><input id="handoff-anonymize" type="checkbox" checked> 안면·번호판 비식별화</label>
+      <div id="anonymize-classes-wrap">
+        <span class="field-help">비식별화 대상</span>
+        <div class="anonymize-classes" id="anonymize-classes">
+          <button type="button" class="is-selected" data-class-id="2" aria-pressed="true">안면</button>
+          <button type="button" class="is-selected" data-class-id="5" aria-pressed="true">번호판</button>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" id="run-handoff" class="primary">선택 영상 전달 시작</button>
+      </div>
+      <p id="handoff-status" class="prepare-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="result">
+      <div class="section-head"><h2>전달 결과</h2><span class="tag">RESULT</span></div>
+      <div id="result-summary" class="prepare-info-block">
+        <h3>요약</h3>
+        <p>아직 Data Studio로 전달한 작업이 없습니다.</p>
+      </div>
+      <details class="dataset-selection">
+        <summary>상세 JSON</summary>
+        <pre id="result-detail">—</pre>
+      </details>
+    </section>
+
+    <section id="label">
+      <div class="section-head"><h2>라벨링 이어하기</h2><span class="tag">STUDIO</span></div>
+      <p class="prepare-path-banner" id="label-folder-path" hidden>작업 폴더<br><code id="label-folder-code"></code></p>
+      <div id="label-stats" class="prepare-stat-grid" aria-live="polite"></div>
+      <div class="prepare-actions">
+        <button type="button" id="prepare-open-studio" class="primary" disabled>Data Studio에서 열기</button>
+        <button type="button" id="refresh-label-stats" class="secondary" disabled>진행률 새로고침</button>
+      </div>
+      <p id="label-status" class="prepare-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <p id="connection" class="connection" role="status">연결 확인 중…</p>
+  </div>
+</main>
+<script src="/prepare/app.js?v=5" defer></script>
+</body>
+</html>

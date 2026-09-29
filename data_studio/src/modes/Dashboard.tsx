@@ -3,6 +3,7 @@ import DashboardFolderTree from '../components/DashboardFolderTree';
 import {
   DEFAULT_DETECTOR_ROOT,
   DEFAULT_VLM_ROOT,
+  fetchFolderEntries,
   fetchVlmDashboard,
   fetchYoloDashboard,
 } from '../dashboardApi';
@@ -15,6 +16,7 @@ import type {
 } from '../dashboardTypes';
 import type { YoloWorkflowStatus } from '../yoloMeta';
 import type { LabelAccessRole } from '../accessControl';
+import WorkflowRoleSelect from '../components/WorkflowRoleSelect';
 import { workflowStatusLabel } from '../yoloMeta';
 
 const DASHBOARD_TAB_KEY = 'intellivixDashboard.tabV1';
@@ -59,6 +61,46 @@ function statusTone(status: YoloWorkflowStatus): string {
   }
 }
 
+const SubfolderDrillButton: React.FC<{
+  folderPath: string;
+  accent: 'lime' | 'purple';
+  onDrillDown: (path: string) => void;
+}> = ({ folderPath, accent, onDrillDown }) => {
+  const [dirCount, setDirCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void fetchFolderEntries(folderPath)
+      .then((entries) => {
+        if (!alive) return;
+        setDirCount(entries.filter((entry) => entry.type === 'dir').length);
+      })
+      .catch(() => {
+        if (alive) setDirCount(0);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [folderPath]);
+
+  if (dirCount == null || dirCount === 0) return null;
+
+  const tone =
+    accent === 'lime'
+      ? 'border-[var(--accent-lime)]/45 text-[var(--accent-lime)] hover:bg-[var(--accent-lime)]/10'
+      : 'border-[var(--accent-purple)]/45 text-[var(--accent-purple)] hover:bg-[var(--accent-purple)]/10';
+
+  return (
+    <button
+      type="button"
+      onClick={() => onDrillDown(folderPath)}
+      className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border ${tone} transition-colors`}
+    >
+      하위 폴더 ({dirCount})
+    </button>
+  );
+};
+
 function formatWhen(iso: string): string {
   try {
     const d = new Date(iso);
@@ -77,7 +119,8 @@ function formatWhen(iso: string): string {
 const YoloFolderCard: React.FC<{
   folder: YoloFolderStats;
   onOpen: (path: string, filter?: YoloWorkflowStatus) => void;
-}> = ({ folder, onOpen }) => {
+  onDrillDown: (path: string) => void;
+}> = ({ folder, onOpen, onDrillDown }) => {
   const accent = 'lime';
   const countLabel = '이미지';
   const hoverBorder = accent === 'lime' ? 'hover:border-[var(--accent-lime)]/50' : 'hover:border-[var(--accent-purple)]/50';
@@ -87,10 +130,81 @@ const YoloFolderCard: React.FC<{
       : 'hover:shadow-[0_0_24px_rgba(176,142,212,0.15)]';
 
   return (
+    <div
+      className={`glass-card p-4 border border-white/10 ${hoverBorder} ${hoverShadow} transition-all flex flex-col gap-3 min-h-[9rem]`}
+    >
+      <button
+        type="button"
+        onClick={() => onOpen(folder.folderPath)}
+        className="flex flex-col gap-3 flex-1 text-left min-w-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-lime)]/50"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="font-bold text-white truncate" title={folder.folderName}>
+            {folder.folderName}
+          </h3>
+          <span className="text-xs tabular-nums text-slate-500 shrink-0">{folder.labelRate}%</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="rounded-lg bg-white/5 px-2 py-1.5">
+            <div className="text-slate-500">{countLabel}</div>
+            <div className="font-bold tabular-nums text-[var(--accent-blue)]">{folder.totalImages}</div>
+          </div>
+          <div className="rounded-lg bg-white/5 px-2 py-1.5">
+            <div className="text-slate-500">라벨 있음</div>
+            <div className="font-bold tabular-nums text-emerald-300">{folder.labeledImages}</div>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {(['draft', 'submitted', 'approved', 'rejected'] as const).map((status) => {
+            const count = folder.byStatus[status] ?? 0;
+            if (count === 0) return null;
+            return (
+              <span
+                key={status}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-medium ${statusTone(status)}`}
+              >
+                {workflowStatusLabel(status)}
+                <span className="tabular-nums">{count}</span>
+              </span>
+            );
+          })}
+        </div>
+      </button>
+      <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
+        <SubfolderDrillButton folderPath={folder.folderPath} accent="lime" onDrillDown={onDrillDown} />
+        {(folder.byStatus.submitted ?? 0) > 0 ? (
+          <button
+            type="button"
+            onClick={() => onOpen(folder.folderPath, 'submitted')}
+            className="text-[11px] px-2 py-0.5 rounded-md border border-amber-400/40 text-amber-200 hover:bg-amber-400/10"
+          >
+            검수대기 열기
+          </button>
+        ) : null}
+        {(folder.byStatus.rejected ?? 0) > 0 ? (
+          <button
+            type="button"
+            onClick={() => onOpen(folder.folderPath, 'rejected')}
+            className="text-[11px] px-2 py-0.5 rounded-md border border-red-400/40 text-red-300 hover:bg-red-400/10"
+          >
+            반려 열기
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+};
+
+const VlmFolderCard: React.FC<{
+  folder: VlmFolderStats;
+  onOpen: (path: string, filter?: YoloWorkflowStatus) => void;
+  onDrillDown: (path: string) => void;
+}> = ({ folder, onOpen, onDrillDown }) => (
+  <div className="glass-card p-4 border border-white/10 hover:border-[var(--accent-purple)]/50 hover:shadow-[0_0_24px_rgba(176,142,212,0.15)] transition-all flex flex-col gap-3 min-h-[9rem]">
     <button
       type="button"
       onClick={() => onOpen(folder.folderPath)}
-      className={`glass-card text-left p-4 border border-white/10 ${hoverBorder} ${hoverShadow} transition-all flex flex-col gap-3 min-h-[9rem]`}
+      className="flex flex-col gap-3 flex-1 text-left min-w-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-purple)]/50"
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-bold text-white truncate" title={folder.folderName}>
@@ -100,12 +214,18 @@ const YoloFolderCard: React.FC<{
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-lg bg-white/5 px-2 py-1.5">
-          <div className="text-slate-500">{countLabel}</div>
-          <div className="font-bold tabular-nums text-[var(--accent-blue)]">{folder.totalImages}</div>
+          <div className="text-slate-500">이미지</div>
+          <div className="font-bold tabular-nums text-[var(--accent-blue)]">{folder.imageCount}</div>
+          <div className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
+            라벨 {folder.labeledImageCount} ({folder.imageLabelRate}%)
+          </div>
         </div>
         <div className="rounded-lg bg-white/5 px-2 py-1.5">
-          <div className="text-slate-500">라벨 있음</div>
-          <div className="font-bold tabular-nums text-emerald-300">{folder.labeledImages}</div>
+          <div className="text-slate-500">영상</div>
+          <div className="font-bold tabular-nums text-violet-300">{folder.videoCount}</div>
+          <div className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
+            라벨 {folder.labeledVideoCount} ({folder.videoLabelRate}%)
+          </div>
         </div>
       </div>
       <div className="flex flex-wrap gap-1.5">
@@ -123,109 +243,29 @@ const YoloFolderCard: React.FC<{
           );
         })}
       </div>
-      <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
-        {(folder.byStatus.submitted ?? 0) > 0 ? (
-          <span
-            role="presentation"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpen(folder.folderPath, 'submitted');
-            }}
-            className="text-[11px] px-2 py-0.5 rounded-md border border-amber-400/40 text-amber-200 hover:bg-amber-400/10 cursor-pointer"
-          >
-            검수대기 열기
-          </span>
-        ) : null}
-        {(folder.byStatus.rejected ?? 0) > 0 ? (
-          <span
-            role="presentation"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpen(folder.folderPath, 'rejected');
-            }}
-            className="text-[11px] px-2 py-0.5 rounded-md border border-red-400/40 text-red-300 hover:bg-red-400/10 cursor-pointer"
-          >
-            반려 열기
-          </span>
-        ) : null}
-      </div>
     </button>
-  );
-};
-
-const VlmFolderCard: React.FC<{
-  folder: VlmFolderStats;
-  onOpen: (path: string, filter?: YoloWorkflowStatus) => void;
-}> = ({ folder, onOpen }) => (
-  <button
-    type="button"
-    onClick={() => onOpen(folder.folderPath)}
-    className="glass-card text-left p-4 border border-white/10 hover:border-[var(--accent-purple)]/50 hover:shadow-[0_0_24px_rgba(176,142,212,0.15)] transition-all flex flex-col gap-3 min-h-[9rem]"
-  >
-    <div className="flex items-start justify-between gap-2">
-      <h3 className="font-bold text-white truncate" title={folder.folderName}>
-        {folder.folderName}
-      </h3>
-      <span className="text-xs tabular-nums text-slate-500 shrink-0">{folder.labelRate}%</span>
-    </div>
-    <div className="grid grid-cols-2 gap-2 text-xs">
-      <div className="rounded-lg bg-white/5 px-2 py-1.5">
-        <div className="text-slate-500">이미지</div>
-        <div className="font-bold tabular-nums text-[var(--accent-blue)]">{folder.imageCount}</div>
-        <div className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
-          라벨 {folder.labeledImageCount} ({folder.imageLabelRate}%)
-        </div>
-      </div>
-      <div className="rounded-lg bg-white/5 px-2 py-1.5">
-        <div className="text-slate-500">영상</div>
-        <div className="font-bold tabular-nums text-violet-300">{folder.videoCount}</div>
-        <div className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
-          라벨 {folder.labeledVideoCount} ({folder.videoLabelRate}%)
-        </div>
-      </div>
-    </div>
-    <div className="flex flex-wrap gap-1.5">
-      {(['draft', 'submitted', 'approved', 'rejected'] as const).map((status) => {
-        const count = folder.byStatus[status] ?? 0;
-        if (count === 0) return null;
-        return (
-          <span
-            key={status}
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-medium ${statusTone(status)}`}
-          >
-            {workflowStatusLabel(status)}
-            <span className="tabular-nums">{count}</span>
-          </span>
-        );
-      })}
-    </div>
     <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
+      <SubfolderDrillButton folderPath={folder.folderPath} accent="purple" onDrillDown={onDrillDown} />
       {(folder.byStatus.submitted ?? 0) > 0 ? (
-        <span
-          role="presentation"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpen(folder.folderPath, 'submitted');
-          }}
-          className="text-[11px] px-2 py-0.5 rounded-md border border-amber-400/40 text-amber-200 hover:bg-amber-400/10 cursor-pointer"
+        <button
+          type="button"
+          onClick={() => onOpen(folder.folderPath, 'submitted')}
+          className="text-[11px] px-2 py-0.5 rounded-md border border-amber-400/40 text-amber-200 hover:bg-amber-400/10"
         >
           검수대기 열기
-        </span>
+        </button>
       ) : null}
       {(folder.byStatus.rejected ?? 0) > 0 ? (
-        <span
-          role="presentation"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpen(folder.folderPath, 'rejected');
-          }}
-          className="text-[11px] px-2 py-0.5 rounded-md border border-red-400/40 text-red-300 hover:bg-red-400/10 cursor-pointer"
+        <button
+          type="button"
+          onClick={() => onOpen(folder.folderPath, 'rejected')}
+          className="text-[11px] px-2 py-0.5 rounded-md border border-red-400/40 text-red-300 hover:bg-red-400/10"
         >
           반려 열기
-        </span>
+        </button>
       ) : null}
     </div>
-  </button>
+  </div>
 );
 
 const LabelingDashboardPanel: React.FC<{
@@ -238,6 +278,7 @@ const LabelingDashboardPanel: React.FC<{
   countLabel: string;
   totalStatLabel: string;
   onOpenFolder: (folderPath: string, statusFilter?: YoloWorkflowStatus) => void;
+  onDrillDownFolder: (folderPath: string) => void;
 }> = ({
   summary,
   loading,
@@ -248,6 +289,7 @@ const LabelingDashboardPanel: React.FC<{
   countLabel,
   totalStatLabel,
   onOpenFolder,
+  onDrillDownFolder,
 }) => {
   const pendingFolders = useMemo(
     () => (summary?.folders ?? []).filter((f) => (f.byStatus.submitted ?? 0) > 0),
@@ -363,7 +405,12 @@ const LabelingDashboardPanel: React.FC<{
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {sortedFolders.map((folder) => (
-              <YoloFolderCard key={folder.folderPath} folder={folder} onOpen={onOpenFolder} />
+              <YoloFolderCard
+                key={folder.folderPath}
+                folder={folder}
+                onOpen={onOpenFolder}
+                onDrillDown={onDrillDownFolder}
+              />
             ))}
           </div>
         )}
@@ -379,7 +426,8 @@ const VlmDashboardPanel: React.FC<{
   emptyMessage: string;
   workflowRole: LabelAccessRole;
   onOpenFolder: (folderPath: string, statusFilter?: YoloWorkflowStatus) => void;
-}> = ({ summary, loading, error, emptyMessage, workflowRole, onOpenFolder }) => {
+  onDrillDownFolder: (folderPath: string) => void;
+}> = ({ summary, loading, error, emptyMessage, workflowRole, onOpenFolder, onDrillDownFolder }) => {
   const pendingFolders = useMemo(
     () => (summary?.folders ?? []).filter((f) => (f.byStatus.submitted ?? 0) > 0),
     [summary]
@@ -502,7 +550,12 @@ const VlmDashboardPanel: React.FC<{
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {sortedFolders.map((folder) => (
-              <VlmFolderCard key={folder.folderPath} folder={folder} onOpen={onOpenFolder} />
+              <VlmFolderCard
+                key={folder.folderPath}
+                folder={folder}
+                onOpen={onOpenFolder}
+                onDrillDown={onDrillDownFolder}
+              />
             ))}
           </div>
         )}
@@ -588,6 +641,14 @@ const Dashboard: React.FC<DashboardProps> = ({ accessRole, availableRoles, onAcc
     onOpenVlm({ folderPath, statusFilter });
   };
 
+  const drillDownYolo = (folderPath: string) => {
+    setYoloScanRoot(folderPath);
+  };
+
+  const drillDownVlm = (folderPath: string) => {
+    setVlmScanRoot(folderPath);
+  };
+
   return (
     <div className="flex-1 min-h-0 flex overflow-hidden" style={{ backgroundColor: 'var(--bg-deep)' }}>
       <DashboardFolderTree
@@ -612,25 +673,13 @@ const Dashboard: React.FC<DashboardProps> = ({ accessRole, availableRoles, onAcc
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {availableRoles.length > 1 ? (
-              <label className="sr-only" htmlFor="workflow-role-select">작업 역할 선택</label>
-            ) : null}
-            {availableRoles.length > 1 ? (
-              <select
-                id="workflow-role-select"
-                value={workflowRole}
-                onChange={(event) => onAccessRoleChange(event.target.value as LabelAccessRole)}
-                className="px-3 py-1.5 rounded-lg bg-slate-800 border border-white/10 text-sm text-white"
-                aria-label="작업 역할 선택"
-              >
-                {availableRoles.includes('worker') ? <option value="worker">작업자</option> : null}
-                {availableRoles.includes('reviewer') ? <option value="reviewer">검수자</option> : null}
-              </select>
-            ) : (
-              <span className="px-3 py-1.5 rounded-lg bg-slate-800 border border-white/10 text-sm text-white">
-                {workflowRole === 'reviewer' ? '검수자' : workflowRole === 'worker' ? '작업자' : '조회 전용'}
-              </span>
-            )}
+            <WorkflowRoleSelect
+              id="workflow-role-select-home"
+              role={workflowRole}
+              availableRoles={availableRoles}
+              onRoleChange={onAccessRoleChange}
+              size="md"
+            />
             {workflowUser ? <span className="text-sm text-slate-400">{workflowUser}</span> : null}
             <button
               type="button"
@@ -675,6 +724,7 @@ const Dashboard: React.FC<DashboardProps> = ({ accessRole, availableRoles, onAcc
             countLabel="이미지"
             totalStatLabel="총 이미지"
             onOpenFolder={openYoloFolder}
+            onDrillDownFolder={drillDownYolo}
           />
         ) : (
           <VlmDashboardPanel
@@ -684,6 +734,7 @@ const Dashboard: React.FC<DashboardProps> = ({ accessRole, availableRoles, onAcc
             emptyMessage={`${DEFAULT_VLM_ROOT} 아래 images/videos/generated 카테고리가 없습니다.`}
             workflowRole={workflowRole}
             onOpenFolder={openVlmFolder}
+            onDrillDownFolder={drillDownVlm}
           />
         )}
       </div>

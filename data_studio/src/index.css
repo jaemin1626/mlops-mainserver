@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --accent-blue: #52B6FF;
   --accent-lime: #A8E61B;
@@ -33,7 +37,7 @@ samp {
 }
 
 /**
- * Tailwind CDN 기본: .font-mono → 시스템 고정폭, .font-sans → UI sans
+ * Tailwind 기본: .font-mono → 시스템 고정폭, .font-sans → UI sans
  * 메인과 동일한 Pretendard로 맞춤. 숫자 열 정렬은 tabular-nums 유지.
  */
 .font-mono {

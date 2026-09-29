@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import ServerFolderPicker from './components/ServerFolderPicker';
+import WorkspaceGuideModal, { type WorkspaceGuideKind } from './components/WorkspaceGuideModal';
 import YoloShortcutsModal from './components/YoloShortcutsModal';
 import type { VlmLaunchRequest, YoloLaunchRequest } from './dashboardTypes';
 import Dashboard from './modes/Dashboard';
@@ -17,6 +18,7 @@ const App: React.FC = () => {
   const [yoloLaunch, setYoloLaunch] = useState<YoloLaunchRequest | null>(null);
   const [vlmLaunch, setVlmLaunch] = useState<VlmLaunchRequest | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [guideKind, setGuideKind] = useState<WorkspaceGuideKind | null>(null);
   const isWeb = window.__DATA_STUDIO_WEB__ === true;
   const [labelAccess, setLabelAccess] = useState<LabelAccess>({ role: isWeb ? 'viewer' : 'worker', roles: [isWeb ? 'viewer' : 'worker'], userName: '', loaded: !isWeb });
   useEffect(() => {
@@ -25,6 +27,21 @@ const App: React.FC = () => {
       .then((r) => r.ok ? r.json() : Promise.reject())
       .then((me) => setLabelAccess(resolveLabelAccess(me)))
       .catch(() => setLabelAccess({ role: 'viewer', roles: ['viewer'], userName: '', loaded: true }));
+  }, [isWeb]);
+
+  useEffect(() => {
+    if (!isWeb) return;
+    const params = new URLSearchParams(window.location.search);
+    const folder = params.get('folder')?.trim();
+    const mode = params.get('mode')?.trim().toLowerCase();
+    if (!folder) return;
+    if (mode === 'vlm') {
+      setVlmLaunch({ folderPath: folder });
+      setMode('vlm');
+    } else if (mode === 'yolo' || mode === 'detector') {
+      setYoloLaunch({ folderPath: folder });
+      setMode('yolo');
+    }
   }, [isWeb]);
 
   const handleAccessRoleChange = useCallback((role: LabelAccess['role']) => {
@@ -118,18 +135,41 @@ const App: React.FC = () => {
         </div>
         <div className="flex-1 min-w-0" />
         {mode === 'yolo' && (
+          <div className="shrink-0 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setGuideKind('detector')}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/15 bg-white/5 text-xs font-semibold text-slate-200 hover:bg-white/10 hover:border-white/25 transition-all"
+              title="Detector 사용 가이드"
+            >
+              <span className="font-mono text-sm leading-none text-[var(--accent-lime)]">?</span>
+              <span>사용 가이드</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShortcutsOpen(true)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[var(--accent-lime)]/35 bg-[var(--accent-lime)]/10 text-xs font-semibold text-[var(--accent-lime)] hover:bg-[var(--accent-lime)]/20 hover:border-[var(--accent-lime)]/55 transition-all"
+              title="단축키 안내"
+            >
+              <span className="font-mono text-sm leading-none">?</span>
+              <span className="text-slate-200 font-medium">단축키</span>
+            </button>
+          </div>
+        )}
+        {mode === 'vlm' && (
           <button
             type="button"
-            onClick={() => setShortcutsOpen(true)}
-            className="shrink-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[var(--accent-lime)]/35 bg-[var(--accent-lime)]/10 text-xs font-semibold text-[var(--accent-lime)] hover:bg-[var(--accent-lime)]/20 hover:border-[var(--accent-lime)]/55 transition-all"
-            title="단축키 안내"
+            onClick={() => setGuideKind('vlm')}
+            className="shrink-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[var(--accent-purple)]/35 bg-[var(--accent-purple)]/10 text-xs font-semibold text-[var(--accent-purple)] hover:bg-[var(--accent-purple)]/20 hover:border-[var(--accent-purple)]/55 transition-all"
+            title="VLM 사용 가이드"
           >
             <span className="font-mono text-sm leading-none">?</span>
-            <span className="text-slate-200 font-medium">단축키</span>
+            <span className="text-slate-200 font-medium">사용 가이드</span>
           </button>
         )}
       </header>
 
+      <WorkspaceGuideModal kind={guideKind} onClose={() => setGuideKind(null)} />
       <YoloShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       {isWeb && <ServerFolderPicker />}
 
@@ -137,9 +177,23 @@ const App: React.FC = () => {
         {mode === 'home' ? (
           <Dashboard accessRole={labelAccess.role} availableRoles={labelAccess.roles} onAccessRoleChange={handleAccessRoleChange} workflowUser={labelAccess.userName} onOpenYolo={handleOpenYoloFromDashboard} onOpenVlm={handleOpenVlmFromDashboard} />
         ) : mode === 'yolo' ? (
-          <YoloWorkspace accessRole={labelAccess.role} workflowUser={labelAccess.userName} launchRequest={yoloLaunch} onLaunchConsumed={handleYoloLaunchConsumed} />
+          <YoloWorkspace
+            accessRole={labelAccess.role}
+            availableRoles={labelAccess.roles}
+            onAccessRoleChange={handleAccessRoleChange}
+            workflowUser={labelAccess.userName}
+            launchRequest={yoloLaunch}
+            onLaunchConsumed={handleYoloLaunchConsumed}
+          />
         ) : mode === 'vlm' ? (
-          <VlmWorkspace accessRole={labelAccess.role} workflowUser={labelAccess.userName} launchRequest={vlmLaunch} onLaunchConsumed={handleVlmLaunchConsumed} />
+          <VlmWorkspace
+            accessRole={labelAccess.role}
+            availableRoles={labelAccess.roles}
+            onAccessRoleChange={handleAccessRoleChange}
+            workflowUser={labelAccess.userName}
+            launchRequest={vlmLaunch}
+            onLaunchConsumed={handleVlmLaunchConsumed}
+          />
         ) : mode === 'polygon' ? (
           <PolygonWorkspace />
         ) : mode === 'landmark' ? (

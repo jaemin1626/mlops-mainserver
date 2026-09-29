@@ -5,10 +5,12 @@ import WorkflowNavigateModal from '../components/WorkflowNavigateModal';
 import { useWorkflowNavGate } from '../useWorkflowNavGate';
 import type { VlmLaunchRequest } from '../dashboardTypes';
 import type { LabelAccessRole } from '../accessControl';
+import WorkflowRoleSelect from '../components/WorkflowRoleSelect';
 import type { OfflineImageItem } from '../electron.d';
 import type { VlmDraftPayload } from '../vlmMerge';
 import type { VlmOfflineTask } from '../vlmTypes';
 import { buildPerImageJsonFileContent, parsePerImageJsonFile } from '../vlmPerImage';
+import { inferVlmMediaType } from '../vlmMedia';
 import {
   appendVlmJsonSaveHistory,
   canEditLabels,
@@ -56,12 +58,21 @@ function workflowStatusBadgeClass(status: YoloWorkflowStatus): string {
 
 interface VlmWorkspaceProps {
   accessRole: LabelAccessRole;
+  availableRoles: LabelAccessRole[];
+  onAccessRoleChange: (role: LabelAccessRole) => void;
   workflowUser: string;
   launchRequest?: VlmLaunchRequest | null;
   onLaunchConsumed?: () => void;
 }
 
-const VlmWorkspace: React.FC<VlmWorkspaceProps> = ({ accessRole, workflowUser, launchRequest = null, onLaunchConsumed }) => {
+const VlmWorkspace: React.FC<VlmWorkspaceProps> = ({
+  accessRole,
+  availableRoles,
+  onAccessRoleChange,
+  workflowUser,
+  launchRequest = null,
+  onLaunchConsumed,
+}) => {
   const [workFolderPath, setWorkFolderPath] = useState<string | null>(null);
   const [imageList, setImageList] = useState<OfflineImageItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -93,6 +104,11 @@ const VlmWorkspace: React.FC<VlmWorkspaceProps> = ({ accessRole, workflowUser, l
   const [statusFilteredNavIndices, setStatusFilteredNavIndices] = useState<number[] | null>(null);
   const [statusFilterLoading, setStatusFilterLoading] = useState(false);
   const [statusFilterScanKey, setStatusFilterScanKey] = useState(0);
+
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [mergeFilterApproved, setMergeFilterApproved] = useState(true);
+  const [isMergeExporting, setIsMergeExporting] = useState(false);
+  const [mergeProgress, setMergeProgress] = useState<{ done: number; total: number } | null>(null);
 
   const draftRef = useRef<VlmDraftPayload | null>(null);
   const gotoInputRef = useRef<HTMLInputElement>(null);
@@ -479,6 +495,86 @@ const VlmWorkspace: React.FC<VlmWorkspaceProps> = ({ accessRole, workflowUser, l
     [gotoInput, navCount, goToIndex]
   );
 
+  /** 이미지별 JSON → vlm_merged.json 병합 내보내기 */
+  const handleMergeExport = useCallback(async (approvedOnly: boolean) => {
+    if (!window.electron || imageList.length === 0) return;
+    const defaultPath = workFolderPath ? `${workFolderPath}/vlm_merged.json` : undefined;
+    const savePath = await window.electron.saveJsonFileDialog(defaultPath);
+    if (!savePath) return;
+
+    setShowMergeModal(false);
+    setIsMergeExporting(true);
+    setMergeProgress({ done: 0, total: imageList.length });
+    setStatusMessage('병합 중…');
+
+    try {
+      const merged: Record<string, unknown>[] = [];
+      const list = imageListRef.current;
+
+      for (let i = 0; i < list.length; i++) {
+        const item = list[i];
+        setMergeProgress({ done: i + 1, total: list.length });
+
+        // 상태 필터
+        if (approvedOnly) {
+          try {
+            const meta = await loadYoloMeta((p) => window.electron!.readJsonFile(p), item.imagePath);
+            if (meta.workflowStatus !== 'approved') continue;
+          } catch {
+            continue;
+          }
+        }
+
+        // 이미지별 JSON 읽기
+        let parsed: Record<string, unknown>;
+        try {
+          const res = await window.electron.readJsonFile(item.jsonPath);
+          if (!res.ok || !res.text?.trim()) continue;
+          const raw = JSON.parse(res.text) as unknown;
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+          parsed = raw as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+
+        // GPT 응답이 있는 항목만 포함
+        const conversations = Array.isArray(parsed.conversations) ? parsed.conversations : [];
+        const hasGptResponse = conversations.some((c: unknown) => {
+          if (!c || typeof c !== 'object') return false;
+          const from = String((c as Record<string, unknown>).from ?? '').toLowerCase();
+          const value = String((c as Record<string, unknown>).value ?? '').trim();
+          return (from === 'gpt' || from === 'assistant' || from === 'model') && value.length > 0;
+        });
+        if (!hasGptResponse) continue;
+
+        // image/video 필드를 서버가 제공한 절대 경로로 교정
+        const absPath = item.imagePath.replace(/\\/g, '/');
+        const mediaType = inferVlmMediaType(absPath, parsed.mediaType);
+        const out = { ...parsed };
+        delete out.media;
+        delete out.image;
+        delete out.video;
+        if (mediaType === 'video') out.video = absPath;
+        else out.image = absPath;
+        out.mediaType = mediaType;
+
+        merged.push(out);
+      }
+
+      const content = `${JSON.stringify(merged, null, 2)}\n`;
+      const ok = await window.electron.writeJsonFile(savePath, content);
+      setStatusMessage(ok
+        ? `병합 완료: ${merged.length}건 저장 → ${savePath.replace(/^.*[/\\]/, '')}`
+        : '병합 저장 실패: 파일 쓰기 오류'
+      );
+    } catch (e) {
+      setStatusMessage('병합 내보내기 실패: ' + (e as Error).message);
+    } finally {
+      setIsMergeExporting(false);
+      setMergeProgress(null);
+    }
+  }, [imageList, workFolderPath]);
+
   const openFolderRef = useRef(handleOpenFolder);
   openFolderRef.current = handleOpenFolder;
   const goPrevRef = useRef(goPrev);
@@ -583,13 +679,30 @@ const VlmWorkspace: React.FC<VlmWorkspaceProps> = ({ accessRole, workflowUser, l
           />
           이동 시 자동 저장
         </label>
+        {imageList.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowMergeModal(true)}
+            disabled={isMergeExporting}
+            className="px-3 py-1.5 rounded-xl glass border border-[var(--accent-purple)]/40 text-xs font-medium text-[var(--accent-purple)] hover:border-[var(--accent-purple)] hover:bg-[var(--accent-purple)]/10 disabled:opacity-40 transition-all shrink-0"
+            title="이미지별 JSON 파일을 하나의 학습용 JSON으로 병합 내보내기"
+          >
+            {isMergeExporting
+              ? `병합 중… ${mergeProgress ? `(${mergeProgress.done}/${mergeProgress.total})` : ''}`
+              : '학습용 JSON 병합'}
+          </button>
+        )}
         <div className="flex-1 min-w-[120px] text-sm text-slate-400 truncate">{statusMessage}</div>
       </header>
 
       <div className="glass flex-shrink-0 border-b border-white/10 px-5 py-2 flex flex-wrap items-center gap-3">
-        <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-white/10 text-xs text-white">
-          {accessRole === 'reviewer' ? '검수자' : accessRole === 'worker' ? '작업자' : '조회 전용'}
-        </span>
+        <WorkflowRoleSelect
+          id="workflow-role-select-vlm"
+          role={accessRole}
+          availableRoles={availableRoles}
+          onRoleChange={onAccessRoleChange}
+          size="sm"
+        />
         {workflowUser ? <span className="text-xs text-slate-400">{workflowUser}</span> : null}
         <div className="flex flex-wrap items-center gap-1">
           {STATUS_FILTER_OPTIONS.map((opt) => (
@@ -747,6 +860,71 @@ const VlmWorkspace: React.FC<VlmWorkspaceProps> = ({ accessRole, workflowUser, l
         onCancel={() => void handleNavCancel()}
         onConfirm={() => void handleNavConfirm()}
       />
+
+      {/* JSON 병합 내보내기 모달 */}
+      {showMergeModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowMergeModal(false)}
+        >
+          <div
+            className="glass-card w-full max-w-sm border border-[var(--accent-purple)]/25 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+              <h2 className="text-base font-bold text-white">학습용 JSON 병합</h2>
+              <button
+                type="button"
+                onClick={() => setShowMergeModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                aria-label="닫기"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-xs text-slate-400">
+                현재 폴더의 이미지별 <code className="text-slate-300">.json</code> 파일을 읽어
+                GPT 응답이 있는 항목만 하나의 배열로 병합합니다.
+              </p>
+              <div className="glass rounded-xl p-3 border border-white/10 text-xs text-slate-400 space-y-1">
+                <div>대상 항목: <span className="text-white font-semibold tabular-nums">{imageList.length}개</span></div>
+                <div>출력 위치: <span className="text-[var(--accent-purple)] font-mono">{workFolderPath ? `${workFolderPath.replace(/^.*[/\\]/, '')}/vlm_merged.json` : '저장 대화상자에서 선택'}</span></div>
+              </div>
+              <label className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${mergeFilterApproved ? 'border-emerald-400/40 bg-emerald-400/5' : 'border-white/10 bg-white/5'}`}>
+                <input
+                  type="checkbox"
+                  checked={mergeFilterApproved}
+                  onChange={(e) => setMergeFilterApproved(e.target.checked)}
+                  className="mt-0.5 shrink-0 rounded border-white/20"
+                />
+                <div>
+                  <p className="text-sm text-slate-200 font-medium">승인 항목만 포함</p>
+                  <p className="text-xs text-slate-500 mt-0.5">체크 해제 시 라벨이 있는 모든 항목 (draft·submitted·approved·rejected) 포함</p>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setShowMergeModal(false)}
+                className="px-4 py-2 rounded-xl glass border border-white/10 text-sm text-slate-300 hover:text-white"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleMergeExport(mergeFilterApproved)}
+                className="px-5 py-2 rounded-xl text-sm font-semibold border border-[var(--accent-purple)]/50 bg-[var(--accent-purple)]/20 text-[var(--accent-purple)] hover:bg-[var(--accent-purple)]/30 transition-all"
+              >
+                내보내기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

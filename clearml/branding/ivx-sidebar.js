@@ -1,4 +1,89 @@
 (function () {
+  if (window.__ivxWireSidebarTooltip) return;
+
+  var SHOW_DELAY_MS = 300;
+
+  function overlayContainer() {
+    var root = document.querySelector('.cdk-overlay-container');
+    if (!root) {
+      root = document.createElement('div');
+      root.className = 'cdk-overlay-container';
+      document.body.appendChild(root);
+    }
+    return root;
+  }
+
+  function positionPane(pane, link) {
+    var nav = link.closest('sm-side-nav');
+    var navRect = nav ? nav.getBoundingClientRect() : link.getBoundingClientRect();
+    var linkRect = link.getBoundingClientRect();
+    var surface = pane.querySelector('.mat-mdc-tooltip-surface');
+    if (!surface) return;
+    pane.style.position = 'fixed';
+    pane.style.pointerEvents = 'none';
+    pane.style.zIndex = '1000';
+    var top = linkRect.top + linkRect.height / 2 - surface.offsetHeight / 2;
+    pane.style.top = Math.max(8, top) + 'px';
+    pane.style.left = Math.round(navRect.right + 1) + 'px';
+  }
+
+  window.ivxWireSidebarTooltip = function (link, getText, marker) {
+    if (!link || link.dataset[marker]) return;
+    link.dataset[marker] = '1';
+    link.removeAttribute('title');
+
+    var showTimer = null;
+    var hideTimer = null;
+    var pane = null;
+
+    function hide() {
+      if (pane && pane.parentNode) pane.parentNode.removeChild(pane);
+      pane = null;
+    }
+
+    function show() {
+      hide();
+      var text = typeof getText === 'function' ? getText() : getText;
+      if (!text) return;
+
+      pane = document.createElement('div');
+      pane.className = 'cdk-overlay-pane ivx-sidebar-tooltip-pane';
+
+      var host = document.createElement('div');
+      host.className = 'mat-mdc-tooltip mat-mdc-tooltip-show ivx-sidebar-tooltip';
+      host.setAttribute('role', 'tooltip');
+
+      var surface = document.createElement('div');
+      surface.className = 'mat-mdc-tooltip-surface mdc-tooltip__surface';
+      surface.textContent = text;
+
+      host.appendChild(surface);
+      pane.appendChild(host);
+      overlayContainer().appendChild(pane);
+      positionPane(pane, link);
+    }
+
+    function scheduleShow() {
+      clearTimeout(hideTimer);
+      clearTimeout(showTimer);
+      showTimer = setTimeout(show, SHOW_DELAY_MS);
+    }
+
+    function scheduleHide() {
+      clearTimeout(showTimer);
+      hideTimer = setTimeout(hide, 0);
+    }
+
+    link.addEventListener('mouseenter', scheduleShow, true);
+    link.addEventListener('mouseleave', scheduleHide, true);
+    link.addEventListener('focus', scheduleShow, true);
+    link.addEventListener('blur', scheduleHide, true);
+  };
+
+  window.__ivxWireSidebarTooltip = true;
+})();
+
+(function () {
   if (window.__ivxSidebarLoaded) return;
   window.__ivxSidebarLoaded = true;
   var DATA_STUDIO_URL = '/data-studio/';
@@ -55,6 +140,14 @@
   function removeInjectedSeoulNav(root) {
     var old = root.getElementById('ivx-seoul-studio-nav');
     if (old) old.remove();
+  }
+
+  function removeUnusedClearmlNavItems(root) {
+    root.querySelectorAll(
+      'sm-side-nav .items-container > a.al-ico-queues, sm-side-nav .items-container > a.al-ico-model-endpoints'
+    ).forEach(function (el) {
+      el.remove();
+    });
   }
 
   function hideGlobalHelp(root) {
@@ -145,6 +238,7 @@
       });
     }
     removeInjectedSeoulNav(root);
+    removeUnusedClearmlNavItems(root);
     hideGlobalHelp(root);
     syncSettingsAdmin(root);
 
@@ -184,14 +278,127 @@
 (function(){
  if(window.__ivxTrainNav)return;window.__ivxTrainNav=true;
  var dialog, opener, canTrain=false;
- var style=document.createElement('style');
- style.textContent='#ivx-train-nav{display:flex!important;align-items:center;justify-content:center;color:var(--color-primary);font:22px Heebo,sans-serif;cursor:pointer}#ivx-train-nav[aria-disabled="true"]{color:#66758a!important;cursor:not-allowed!important;opacity:.5}#ivx-train-dialog{border:1px solid #344358;border-radius:16px;padding:0;width:min(1560px,94vw);height:92vh;max-width:94vw;max-height:94vh;background:#0e131a;box-shadow:0 24px 90px #0008;overflow:hidden}#ivx-train-dialog::backdrop{background:#080d16b8;backdrop-filter:blur(3px)}#ivx-train-dialog iframe{border:0;width:100%;height:100%;display:block}@media(max-width:760px){#ivx-train-dialog{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0}}';
- document.head.appendChild(style);
+ function ensureTrainNavMarkup(a){if(!a)return;a.textContent='';}
  function close(){if(dialog?.open)dialog.close();if(opener?.isConnected)opener.focus();}
  function open(e){e.preventDefault();if(!canTrain){e.stopPropagation();e.stopImmediatePropagation();return;}opener=e.currentTarget;if(!dialog){dialog=document.createElement('dialog');dialog.id='ivx-train-dialog';dialog.setAttribute('aria-label','모델 학습 설정');var frame=document.createElement('iframe');frame.title='Detector 및 VLM 학습 설정';frame.src='/train/';dialog.appendChild(frame);document.body.appendChild(dialog);dialog.addEventListener('cancel',e=>{e.preventDefault();close();});}else{dialog.querySelector('iframe').contentWindow.postMessage({type:'ivx-train-reopened'},location.origin);}dialog.showModal();}
  window.addEventListener('message',e=>{if(e.origin===location.origin&&dialog&&e.source===dialog.querySelector('iframe').contentWindow&&e.data?.type==='ivx-close-train')close();});
- function applyPermission(){var a=document.querySelector('#ivx-train-nav');if(!a)return;a.setAttribute('aria-disabled',canTrain?'false':'true');a.title=canTrain?'모델 학습 · Train':'모델 학습 및 배포 권한이 필요합니다.';if(canTrain){a.href='/train/';a.tabIndex=0;}else{a.removeAttribute('href');a.tabIndex=-1;if(dialog?.open)close();}}
- function sync(){var items=document.querySelector('sm-side-nav .items-container'),a=items&&items.querySelector('#ivx-train-nav');if(!items)return;if(!a){a=document.createElement('a');a.id='ivx-train-nav';a.className='item';a.setAttribute('aria-label','모델 학습 · Train');a.textContent='▶';a.addEventListener('click',open,true);items.appendChild(a);}applyPermission();}
+ function trainTooltipText(){return canTrain?'모델 학습 · Train':'모델 학습 및 배포 권한이 필요합니다.';}
+ function applyPermission(){var a=document.querySelector('#ivx-train-nav');if(!a)return;a.setAttribute('aria-disabled',canTrain?'false':'true');a.removeAttribute('title');if(canTrain){a.href='/train/';a.tabIndex=0;}else{a.removeAttribute('href');a.tabIndex=-1;if(dialog?.open)close();}}
+ function sync(){var items=document.querySelector('sm-side-nav .items-container'),a=items&&items.querySelector('#ivx-train-nav');if(!items)return;if(!a){a=document.createElement('a');a.id='ivx-train-nav';a.className='item';a.setAttribute('aria-label','모델 학습 · Train');ensureTrainNavMarkup(a);a.addEventListener('click',open,true);items.appendChild(a);}else{ensureTrainNavMarkup(a);}if(window.ivxWireSidebarTooltip)window.ivxWireSidebarTooltip(a,trainTooltipText,'ivxTrainTooltip');applyPermission();}
  function boot(){new MutationObserver(sync).observe(document.body,{childList:true,subtree:true});sync();fetch('/access-api/auth/me',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(me){canTrain=!!(me&&(me.is_admin||(me.permissions||[]).includes('TRAIN_DEPLOY')));applyPermission();}).catch(function(){canTrain=false;applyPermission();});}
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+
+/* Data prepare pipeline — modal above Train in sidebar. */
+(function () {
+  if (window.__ivxPrepareNav) return;
+  window.__ivxPrepareNav = true;
+  var dialog, opener, canPrepare = false;
+
+  function ensurePrepareNavMarkup(a) {
+    if (!a) return;
+    a.textContent = '';
+  }
+
+  function close() {
+    if (dialog && dialog.open) dialog.close();
+    if (opener && opener.isConnected) opener.focus();
+    if (dialog) {
+      var frame = dialog.querySelector('iframe');
+      if (frame) frame.src = '/prepare/';
+    }
+  }
+
+  function open(e) {
+    e.preventDefault();
+    if (!canPrepare) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      return;
+    }
+    opener = e.currentTarget;
+    if (!dialog) {
+      dialog = document.createElement('dialog');
+      dialog.id = 'ivx-prepare-dialog';
+      dialog.setAttribute('aria-label', '데이터 준비');
+      var frame = document.createElement('iframe');
+      frame.title = '데이터 준비 · Prepare';
+      frame.src = '/prepare/';
+      dialog.appendChild(frame);
+      document.body.appendChild(dialog);
+      dialog.addEventListener('cancel', function (ev) {
+        ev.preventDefault();
+        close();
+      });
+    }
+    dialog.showModal();
+  }
+
+  window.addEventListener('message', function (e) {
+    if (e.origin !== location.origin || !dialog || e.source !== dialog.querySelector('iframe').contentWindow) return;
+    if (e.data && e.data.type === 'ivx-close-prepare') close();
+  });
+
+  function prepareTooltipText() {
+    return canPrepare ? '데이터 준비 · Prepare' : '데이터 준비 권한(생성 또는 라벨링)이 필요합니다.';
+  }
+
+  function applyPermission() {
+    var a = document.querySelector('#ivx-prepare-nav');
+    if (!a) return;
+    a.setAttribute('aria-disabled', canPrepare ? 'false' : 'true');
+    a.removeAttribute('title');
+    if (canPrepare) {
+      a.href = '/prepare/';
+      a.tabIndex = 0;
+    } else {
+      a.removeAttribute('href');
+      a.tabIndex = -1;
+      if (dialog && dialog.open) close();
+    }
+  }
+
+  function sync() {
+    var items = document.querySelector('sm-side-nav .items-container');
+    var train = items && items.querySelector('#ivx-train-nav');
+    if (!items) return;
+    var prep = items.querySelector('#ivx-prepare-nav');
+    if (!prep) {
+      prep = document.createElement('a');
+      prep.id = 'ivx-prepare-nav';
+      prep.className = 'item';
+      prep.setAttribute('aria-label', '데이터 준비 · Prepare');
+      ensurePrepareNavMarkup(prep);
+      prep.addEventListener('click', open, true);
+      if (train) items.insertBefore(prep, train);
+      else items.appendChild(prep);
+    } else {
+      ensurePrepareNavMarkup(prep);
+    }
+    if (window.ivxWireSidebarTooltip) {
+      window.ivxWireSidebarTooltip(prep, prepareTooltipText, 'ivxPrepareTooltip');
+    }
+    applyPermission();
+  }
+
+  function boot() {
+    new MutationObserver(sync).observe(document.body, { childList: true, subtree: true });
+    sync();
+    fetch('/access-api/auth/me', { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) {
+        return r.ok ? r.json() : null;
+      })
+      .then(function (me) {
+        var perms = (me && me.permissions) || [];
+        canPrepare = !!(me && (me.is_admin || perms.indexOf('DATA_GENERATE') >= 0 || perms.indexOf('LABEL_WORK') >= 0 || perms.indexOf('LABEL_REVIEW') >= 0));
+        applyPermission();
+      })
+      .catch(function () {
+        canPrepare = false;
+        applyPermission();
+      });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
 })();

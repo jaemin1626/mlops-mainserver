@@ -190,6 +190,7 @@ services:
     - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/ivx-dataset-branch.css:/usr/share/nginx/html/ivx-dataset-branch.css:ro
     - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/ivx-dataset-branch.js:/usr/share/nginx/html/ivx-dataset-branch.js:ro
     - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/train:/usr/share/nginx/html/train:ro
+    - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/prepare:/usr/share/nginx/html/prepare:ro
     - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/ivx-dashboard.js:/usr/share/nginx/html/ivx-dashboard.js:ro
     - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/training-metrics.json:/usr/share/nginx/html/training-metrics.json:ro
     - ${CLEARML_DIR_PATH:-/opt/clearml}/branding/training-dashboard.html:/usr/share/nginx/html/training-dashboard.html:ro
@@ -222,6 +223,21 @@ services:
     networks:
       - frontend
 
+  ollama:
+    image: ollama/ollama:0.9.6
+    container_name: clearml-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
   seoul-studio:
     image: clearml-seoul-studio:pin-20260903-v1
     build:
@@ -244,12 +260,20 @@ services:
       ACCESS_CONTROL_URL: http://access-control:8095
       CLEARML_API_ACCESS_KEY: ${CLEARML_AGENT_ACCESS_KEY:-${CLEARML_ACCESS_KEY:-}}
       CLEARML_API_SECRET_KEY: ${CLEARML_AGENT_SECRET_KEY:-${CLEARML_SECRET_KEY:-}}
+      PROMPT_LLM_BASE_URL: ${PROMPT_LLM_BASE_URL:-http://ollama:11434/v1}
+      PROMPT_LLM_MODEL: ${PROMPT_LLM_MODEL:-llama3.2:3b}
+      PROMPT_LLM_API_KEY: ${PROMPT_LLM_API_KEY:-}
+      PROMPT_LLM_TIMEOUT_SEC: ${PROMPT_LLM_TIMEOUT_SEC:-120}
     volumes:
       - ${GENERATED_EXPORT_PATH:-/home/intellivix/train/ComfyUI/generate_datasets}:/data/output
       - ${DATASET_EXPORT_PATH:-./data/datasets}:/data/datasets
       - ${SEOUL_STUDIO_CONFIG_PATH:-../ComfyUI_seoul/data/config}:/data/config
       - ${BLUR_WEIGHTS_DIR:-./models/anonymize}:/data/models/anonymize:ro
-    depends_on: [access-control]
+    depends_on:
+      access-control:
+        condition: service_started
+      ollama:
+        condition: service_started
     networks:
       - frontend
       - backend
@@ -405,3 +429,6 @@ networks:
     driver: bridge
   frontend:
     driver: bridge
+
+volumes:
+  ollama_data:

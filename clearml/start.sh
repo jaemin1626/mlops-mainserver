@@ -8,11 +8,13 @@
 #     4. docker compose up
 #     5. data-studio · seoul-studio 재기동 (마운트 경로 반영)
 #     6. Grafana 모니터링 (.env 반영, --force-recreate)
+#     7. Ollama (Video Studio AI 프롬프트 — 모델 없으면 pull 시도)
 #
 #   사용:
 #     bash /opt/clearml/start.sh
 #     bash /opt/clearml/start.sh --no-mount
 #     bash /opt/clearml/start.sh --no-monitoring
+#     bash /opt/clearml/start.sh --no-ollama         # Ollama 기동·모델 pull 생략
 #     bash /opt/clearml/start.sh --no-remote-setup   # 학습 서버 SSH 확인 대기 없이 진행
 #     bash /opt/clearml/start.sh --no-projects       # 기본 프로젝트(Dataset·Detector·VLM) 생성 생략
 set -euo pipefail
@@ -24,15 +26,17 @@ SKIP_MOUNT=0
 SKIP_MONITORING=0
 SKIP_REMOTE=0
 SKIP_PROJECTS=0
+SKIP_OLLAMA=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-mount) SKIP_MOUNT=1 ;;
         --no-monitoring) SKIP_MONITORING=1 ;;
+        --no-ollama) SKIP_OLLAMA=1 ;;
         --no-remote-setup) SKIP_REMOTE=1 ;;
         --no-projects) SKIP_PROJECTS=1 ;;
         -h|--help)
-            sed -n '2,21p' "$0"
+            sed -n '2,22p' "$0"
             exit 0
             ;;
         *) echo "unknown option: $1" >&2; exit 1 ;;
@@ -311,6 +315,53 @@ else
     ok "monitoring ready"
 fi
 
+# ── 7/7 Ollama (Video Studio AI 프롬프트) ─────────────────────────────────
+step "7/7 Ollama (Video Studio AI 프롬프트)"
+if [ "$SKIP_OLLAMA" = 1 ]; then
+    echo "  skipped (--no-ollama)"
+else
+    PROMPT_MODEL="$(set -a; . "${ROOT}/.env"; echo "${PROMPT_LLM_MODEL:-llama3.2:3b}")"
+    OLLAMA_CONTAINER="${OLLAMA_CONTAINER:-clearml-ollama}"
+
+    ./compose.sh up -d ollama
+    OLLAMA_READY=0
+    for _ in $(seq 1 45); do
+        if docker inspect "$OLLAMA_CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null | grep -qx healthy; then
+            OLLAMA_READY=1
+            break
+        fi
+        if docker inspect "$OLLAMA_CONTAINER" --format '{{.State.Running}}' 2>/dev/null | grep -qx true; then
+            if docker exec "$OLLAMA_CONTAINER" ollama list >/dev/null 2>&1; then
+                OLLAMA_READY=1
+                break
+            fi
+        fi
+        sleep 2
+    done
+
+    if [ "$OLLAMA_READY" != 1 ]; then
+        warn "Ollama 컨테이너가 준비되지 않았습니다 — ./compose.sh logs ollama 확인"
+    else
+        ok "Ollama 컨테이너 준비됨"
+        MODEL_BASE="${PROMPT_MODEL%%:*}"
+        if docker exec "$OLLAMA_CONTAINER" ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qx "$PROMPT_MODEL" \
+            || docker exec "$OLLAMA_CONTAINER" ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -q "^${MODEL_BASE}"; then
+            ok "Ollama 모델 있음: ${PROMPT_MODEL}"
+        else
+            warn "Ollama 모델 없음: ${PROMPT_MODEL} — pull 시도 (폐쇄망이면 실패할 수 있음)"
+            if bash "${ROOT}/scripts/ollama-pull-prompt-model.sh"; then
+                ok "Ollama 모델 pull 완료: ${PROMPT_MODEL}"
+            else
+                warn "모델 pull 실패 — AI 초안은 템플릿만 사용합니다"
+                warn "폐쇄망: ollama_data 볼륨 복원 후 start.sh 재실행, 또는 scripts/ollama-pull-prompt-model.sh"
+            fi
+        fi
+        ./compose.sh up -d --force-recreate seoul-studio >/dev/null 2>&1 \
+            && ok "seoul-studio 재기동 (Ollama URL 반영)" \
+            || warn "seoul-studio 재기동 실패 — 수동: ./compose.sh up -d --force-recreate seoul-studio"
+    fi
+fi
+
 # ── 결과 요약 ────────────────────────────────────────────────────────────
 HOST_IP="$(grep '^CLEARML_HOST_IP=' "${ROOT}/.env" 2>/dev/null | cut -d= -f2- || echo '?')"
 DATASET_PATH="$(grep '^DATASET_EXPORT_PATH=' "${ROOT}/.env" 2>/dev/null | cut -d= -f2- || echo '?')"
@@ -340,6 +391,14 @@ if grep -qE '^CLEARML_ACCESS_KEY=.+' "${ROOT}/.env" 2>/dev/null && grep -qE '^CL
 else
     echo "  ${YEL}!${NC} 학습 중 영상 생성 차단: 꺼짐 — .env 의 CLEARML_ACCESS_KEY / CLEARML_SECRET_KEY 가 비어 있습니다"
     echo "    (웹 Settings > Workspace 에서 키를 발급해 넣고 bash start.sh 를 다시 실행하세요)"
+fi
+PROMPT_MODEL_SUMMARY="$(set -a; . "${ROOT}/.env"; echo "${PROMPT_LLM_MODEL:-llama3.2:3b}")"
+if [ "$SKIP_OLLAMA" = 1 ]; then
+    echo "  Ollama AI 프롬프트: 건너뜀 (--no-ollama)"
+elif docker exec clearml-ollama ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -q "${PROMPT_MODEL_SUMMARY%%:*}"; then
+    echo "  Ollama AI 프롬프트: ${PROMPT_MODEL_SUMMARY} (Video Studio · AI 초안)"
+else
+    echo "  ${YEL}!${NC} Ollama AI 프롬프트: 모델 없음 — 템플릿만 사용 (scripts/ollama-pull-prompt-model.sh)"
 fi
 echo "=================================================="
 bash "${ROOT}/mount/scripts/mount_dataset.sh" status 2>/dev/null || true

@@ -1,23 +1,181 @@
-/* Intellivix — 사이드바에서 불필요한 ClearML 메뉴 숨김 */
-sm-side-nav .al-ico-queues,
-sm-side-nav .al-ico-model-endpoints,
-sm-side-nav a:has(.al-ico-queues),
-sm-side-nav a:has(.al-ico-model-endpoints),
-sm-side-nav button:has(.al-ico-queues),
-sm-side-nav button:has(.al-ico-model-endpoints) {
+/* Workers & Queues, Model Endpoints — 미사용 (JS에서도 제거) */
+sm-side-nav .items-container > a.al-ico-queues,
+sm-side-nav .items-container > a.al-ico-model-endpoints,
+sm-side-nav .items-container > a.item.al-ico-queues,
+sm-side-nav .items-container > a.item.al-ico-model-endpoints {
   display: none !important;
 }
 
-/* Pipelines(Video Studio)를 Data Studio 바로 아래로 */
 sm-side-nav .items-container {
   display: flex !important;
   flex-direction: column !important;
+  align-items: center !important;
+  gap: 40px !important;
+  padding: 20px 0 !important;
 }
 
-sm-side-nav .items-container .al-ico-enterprise-rocket {
-  order: 5;
+/* ClearML 기본(.item 40×36 + margin 20px)과 동일한 슬롯 — 커스텀 항목만 커지지 않게 */
+sm-side-nav .items-container .item,
+sm-side-nav .items-container > #ivx-prepare-nav,
+sm-side-nav .items-container > #ivx-train-nav {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 36px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex-shrink: 0 !important;
+  border-radius: 6px !important;
+  line-height: 1 !important;
+  text-decoration: none !important;
+  border: none !important;
 }
 
-sm-side-nav .items-container .al-ico-pipelines {
-  order: 6;
+sm-side-nav .items-container > #ivx-prepare-nav,
+sm-side-nav .items-container > #ivx-train-nav {
+  color: var(--color-primary, #3849a8) !important;
+}
+
+/* 네이티브 아이콘(:before)과 동일 — 글리프는 span 대신 ::before + color:inherit */
+sm-side-nav .items-container > #ivx-prepare-nav::before,
+sm-side-nav .items-container > #ivx-train-nav::before {
+  font-family: Heebo, sans-serif !important;
+  font-size: 20px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  color: inherit !important;
+}
+
+sm-side-nav .items-container > #ivx-prepare-nav::before {
+  content: '◆' !important;
+}
+
+sm-side-nav .items-container > #ivx-train-nav::before {
+  content: '▶' !important;
+}
+
+#ivx-prepare-nav[aria-disabled='true'],
+#ivx-train-nav[aria-disabled='true'] {
+  cursor: not-allowed !important;
+  opacity: 0.55 !important;
+  color: #66758a !important;
+}
+
+#ivx-prepare-nav:not([aria-disabled='true']),
+#ivx-train-nav:not([aria-disabled='true']) {
+  cursor: pointer !important;
+}
+
+/* Prepare / Train — ClearML smTooltip 과 동일한 다크 pill (Video Studio 참고) */
+.cdk-overlay-container .cdk-overlay-pane.ivx-sidebar-tooltip-pane .ivx-sidebar-tooltip {
+  --mat-tooltip-container-color: var(--sys-inverse-surface, #363636);
+  --mat-tooltip-supporting-text-color: var(--sys-inverse-on-surface, #ffffff);
+}
+
+.cdk-overlay-container .cdk-overlay-pane.ivx-sidebar-tooltip-pane .mat-mdc-tooltip-surface,
+.cdk-overlay-container .cdk-overlay-pane.ivx-sidebar-tooltip-pane .mdc-tooltip__surface {
+  box-sizing: border-box !important;
+  display: inline-block !important;
+  background-color: var(--mat-tooltip-container-color, var(--sys-inverse-surface, #363636)) !important;
+  color: var(--mat-tooltip-supporting-text-color, #ffffff) !important;
+  font-family: Heebo, sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+  letter-spacing: 0.01em !important;
+  padding: 8px 14px !important;
+  border-radius: 6px !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  white-space: nowrap !important;
+  box-shadow: none !important;
+}
+
+/* Video Studio 등 ClearML .item:hover 와 동일 규칙을 사이드바 전체 a.item에 적용 */
+sm-side-nav .items-container > a.item:not(.active):not([aria-disabled='true']):hover {
+  color: var(--color-primary, #3849a8) !important;
+  background-color: var(--color-surface-container-highest) !important;
+  text-decoration: none !important;
+}
+
+sm-side-nav .items-container > a.item[aria-disabled='true']:hover {
+  background-color: transparent !important;
+  text-decoration: none !important;
+}
+
+/* 메뉴 순서: Projects → Datasets → Prepare → Train → Video Studio → Data Studio */
+sm-side-nav .items-container > a.al-ico-projects,
+sm-side-nav .items-container > a:has(.al-ico-projects) {
+  order: 10;
+}
+
+sm-side-nav .items-container > a.al-ico-datasets,
+sm-side-nav .items-container > a:has(.al-ico-datasets) {
+  order: 20;
+}
+
+sm-side-nav .items-container > #ivx-prepare-nav {
+  order: 30;
+}
+
+sm-side-nav .items-container > #ivx-train-nav {
+  order: 40;
+}
+
+sm-side-nav .items-container > a.al-ico-pipelines,
+sm-side-nav .items-container > a:has(.al-ico-pipelines),
+sm-side-nav .items-container > button:has(.al-ico-pipelines) {
+  order: 50;
+}
+
+sm-side-nav .items-container > a.al-ico-enterprise-rocket,
+sm-side-nav .items-container > a:has(.al-ico-enterprise-rocket),
+sm-side-nav .items-container > button:has(.al-ico-enterprise-rocket) {
+  order: 60;
+}
+
+/* Train / Prepare 모달 */
+#ivx-train-dialog,
+#ivx-prepare-dialog {
+  border: 1px solid #344358;
+  border-radius: 16px;
+  padding: 0;
+  width: min(1560px, 94vw);
+  height: 92vh;
+  max-width: 94vw;
+  max-height: 92vh;
+  background: #0e131a;
+  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.53);
+  overflow: hidden;
+}
+
+#ivx-train-dialog::backdrop,
+#ivx-prepare-dialog::backdrop {
+  background: rgba(8, 13, 22, 0.72);
+  backdrop-filter: blur(3px);
+}
+
+#ivx-train-dialog iframe,
+#ivx-prepare-dialog iframe {
+  border: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+@media (max-width: 760px) {
+  #ivx-train-dialog,
+  #ivx-prepare-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
 }

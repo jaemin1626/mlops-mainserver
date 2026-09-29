@@ -152,6 +152,9 @@ function collectCategoryFolders(parentDir, kindLabel, folders) {
   }
 }
 
+/** 표준 카테고리 디렉토리 이름 (아래에서 직접 프로젝트 폴더 탐색 시 제외) */
+const CATEGORY_DIR_NAMES = new Set(['images', 'videos', 'generated']);
+
 /**
  * @param {string} vlmRoot
  */
@@ -160,6 +163,8 @@ function scanVlmDashboard(vlmRoot) {
   /** @type {VlmFolderStats[]} */
   const folders = [];
 
+  // ── 표준 카테고리 구조 ───────────────────────────
+  // vlmRoot/images/{project}/…  vlmRoot/videos/{project}/…  vlmRoot/generated/…
   const imagesDir = path.join(resolvedRoot, 'images');
   if (fs.existsSync(imagesDir)) {
     collectCategoryFolders(imagesDir, 'images', folders);
@@ -176,6 +181,23 @@ function scanVlmDashboard(vlmRoot) {
     if (stats.totalImages > 0) {
       folders.push(stats);
     }
+  }
+
+  // ── 직접 프로젝트 폴더 구조 (fallback) ─────────────
+  // vlmRoot/{project}/…  형태로 미디어가 바로 저장된 경우
+  try {
+    const entries = fs.readdirSync(resolvedRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || SKIP.has(entry.name)) continue;
+      if (CATEGORY_DIR_NAMES.has(entry.name)) continue; // 이미 위에서 처리
+      const folderPath = path.join(resolvedRoot, entry.name);
+      const stats = scanVlmProjectFolder(folderPath, entry.name);
+      if (stats.totalImages > 0) {
+        folders.push(stats);
+      }
+    }
+  } catch {
+    /* ignore */
   }
 
   folders.sort((a, b) => a.folderName.localeCompare(b.folderName, undefined, { numeric: true }));

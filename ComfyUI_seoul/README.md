@@ -19,6 +19,19 @@ vi /opt/clearml/.env          # CLEARML_SERVER_IP, TRAINING_SERVER_IP 등
 bash /opt/clearml/start.sh      # 또는 packaging/apply-env.sh --restart
 ```
 
+## AI 프롬프트 초안 (Ollama)
+
+`clearml/docker-compose.yml`의 **`ollama`** 서비스가 Video Studio 「AI 초안」용 LLM입니다.
+
+```bash
+cd /opt/clearml   # 또는 clearml 디렉터리
+./compose.sh up -d ollama
+bash scripts/ollama-pull-prompt-model.sh   # 기본 llama3.2:3b (최초 1회)
+./compose.sh up -d --build --force-recreate seoul-studio
+```
+
+모델 변경: `.env`에 `PROMPT_LLM_MODEL=...` 후 pull 스크립트 재실행.
+
 ## 빌드
 
 Docker 이미지는 `clearml/docker-compose.yml`의 `seoul-studio` 서비스가 빌드합니다.

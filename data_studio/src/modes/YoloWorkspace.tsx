@@ -11,6 +11,7 @@ import WorkflowNavigateModal from '../components/WorkflowNavigateModal';
 import { useWorkflowNavGate } from '../useWorkflowNavGate';
 import type { YoloLaunchRequest } from '../dashboardTypes';
 import type { LabelAccessRole } from '../accessControl';
+import WorkflowRoleSelect from '../components/WorkflowRoleSelect';
 import {
   appendLabelSaveHistory,
   canEditLabels,
@@ -28,6 +29,8 @@ import {
 
 interface YoloWorkspaceProps {
   accessRole: LabelAccessRole;
+  availableRoles: LabelAccessRole[];
+  onAccessRoleChange: (role: LabelAccessRole) => void;
   workflowUser: string;
   launchRequest?: YoloLaunchRequest | null;
   onLaunchConsumed?: () => void;
@@ -92,7 +95,14 @@ function classNamesToYoloClasses(classNames: string[]): YoloClass[] {
   }));
 }
 
-const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ accessRole, workflowUser, launchRequest = null, onLaunchConsumed }) => {
+const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({
+  accessRole,
+  availableRoles,
+  onAccessRoleChange,
+  workflowUser,
+  launchRequest = null,
+  onLaunchConsumed,
+}) => {
   const [workFolderPath, setWorkFolderPath] = useState<string | null>(null);
   const [imageList, setImageList] = useState<OfflineImageItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -113,6 +123,14 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ accessRole, workflowUser,
   const labelMenuRef = useRef<HTMLDivElement>(null);
   const labelTriggerRef = useRef<HTMLButtonElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+
+  // 클래스 직접 만들기 모달
+  const [showNewSetModal, setShowNewSetModal] = useState(false);
+  const [newSetName, setNewSetName] = useState('');
+  const [newSetClassInput, setNewSetClassInput] = useState('');
+  const [newSetClassNames, setNewSetClassNames] = useState<string[]>([]);
+  const [newSetSaveFile, setNewSetSaveFile] = useState(false);
+  const newSetClassInputRef = useRef<HTMLInputElement>(null);
   const gotoInputRef = useRef<HTMLInputElement>(null);
   const [labelDropdownRect, setLabelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const [gotoValue, setGotoValue] = useState('');
@@ -568,6 +586,70 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ accessRole, workflowUser,
     });
     setRenameId(null);
   }, [activeClassSetId]);
+
+  /** 직접 만들기 모달 열기 */
+  const handleOpenNewSetModal = useCallback(() => {
+    setLabelMenuOpen(false);
+    setNewSetName('');
+    setNewSetClassNames([]);
+    setNewSetClassInput('');
+    setNewSetSaveFile(false);
+    setShowNewSetModal(true);
+  }, []);
+
+  /** 모달에서 클래스 추가 */
+  const handleNewSetAddClass = useCallback(() => {
+    const trimmed = newSetClassInput.trim();
+    if (!trimmed) return;
+    setNewSetClassNames((prev) => [...prev, trimmed]);
+    setNewSetClassInput('');
+    setTimeout(() => newSetClassInputRef.current?.focus(), 0);
+  }, [newSetClassInput]);
+
+  /** 모달에서 클래스 삭제 */
+  const handleNewSetRemoveClass = useCallback((idx: number) => {
+    setNewSetClassNames((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  /** 모달에서 클래스 순서 이동 */
+  const handleNewSetMoveClass = useCallback((idx: number, dir: 'up' | 'down') => {
+    setNewSetClassNames((prev) => {
+      const next = [...prev];
+      const swap = dir === 'up' ? idx - 1 : idx + 1;
+      if (swap < 0 || swap >= next.length) return prev;
+      [next[idx], next[swap]] = [next[swap], next[idx]];
+      return next;
+    });
+  }, []);
+
+  /** 모달 저장 */
+  const handleNewSetSave = useCallback(async () => {
+    if (newSetClassNames.length === 0) return;
+    const name = newSetName.trim() || 'classes';
+    const newSet: SavedClassSet = {
+      id: newId('classset'),
+      displayName: name,
+      classNames: newSetClassNames,
+    };
+    setSavedClassSets((prev) => [...prev, newSet]);
+    setActiveClassSetId(newSet.id);
+    const yolo = classNamesToYoloClasses(newSet.classNames);
+    setClasses(yolo);
+    setSelectedClass(yolo[0] ?? null);
+
+    if (newSetSaveFile && window.electron && workFolderPath) {
+      const filePath = `${workFolderPath}/${name}.txt`;
+      const content = newSetClassNames.join('\n') + '\n';
+      const ok = await window.electron.writeTxt(filePath, content);
+      setStatusMessage(ok
+        ? `저장됨: ${name} (${newSetClassNames.length}개) — ${filePath}`
+        : `세트 저장됨: ${name} (txt 파일 저장 실패)`
+      );
+    } else {
+      setStatusMessage(`저장됨: ${name} (${newSetClassNames.length}개 클래스)`);
+    }
+    setShowNewSetModal(false);
+  }, [newSetClassNames, newSetName, newSetSaveFile, workFolderPath]);
 
   useEffect(() => {
     if (!labelMenuOpen) return;
@@ -1106,6 +1188,14 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ accessRole, workflowUser,
                   <div className="border-t border-white/10 mt-1 pt-1">
                     <button
                       type="button"
+                      onClick={handleOpenNewSetModal}
+                      className="w-full px-4 py-2.5 text-left text-sm text-[var(--accent-lime)] hover:bg-white/10 transition-colors rounded-lg flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                      직접 만들기
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleLoadFileAndSave}
                       className="w-full px-4 py-2.5 text-left text-sm text-[var(--accent-blue)] hover:bg-white/10 transition-colors rounded-lg flex items-center gap-2"
                     >
@@ -1190,9 +1280,13 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ accessRole, workflowUser,
       </header>
 
       <div className="glass flex-shrink-0 border-b border-white/10 px-5 py-2.5 flex flex-wrap items-center gap-3">
-        <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-white/10 text-xs text-white">
-          {accessRole === 'reviewer' ? '검수자' : accessRole === 'worker' ? '작업자' : '조회 전용'}
-        </span>
+        <WorkflowRoleSelect
+          id="workflow-role-select-yolo"
+          role={accessRole}
+          availableRoles={availableRoles}
+          onRoleChange={onAccessRoleChange}
+          size="sm"
+        />
         {workflowUser ? <span className="text-xs text-slate-400">{workflowUser}</span> : null}
         <div className="h-5 w-px bg-white/10 hidden sm:block" />
         <div className="flex flex-wrap items-center gap-1.5">
@@ -1578,6 +1672,179 @@ const YoloWorkspace: React.FC<YoloWorkspaceProps> = ({ accessRole, workflowUser,
         onCancel={() => void handleNavCancel()}
         onConfirm={() => void handleNavConfirm()}
       />
+
+      {/* 클래스 직접 만들기 모달 */}
+      {showNewSetModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowNewSetModal(false)}
+        >
+          <div
+            className="glass-card w-full max-w-md max-h-[85vh] flex flex-col border border-white/10 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
+              <h2 className="text-base font-bold text-white">클래스 세트 직접 만들기</h2>
+              <button
+                type="button"
+                onClick={() => setShowNewSetModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                aria-label="닫기"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-4 overflow-auto flex-1 min-h-0">
+              {/* 세트 이름 */}
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">세트 이름</label>
+                <input
+                  type="text"
+                  value={newSetName}
+                  onChange={(e) => setNewSetName(e.target.value)}
+                  placeholder="예: detector_classes"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-sm text-white placeholder-slate-500 focus:border-[var(--accent-blue)] focus:ring-1 focus:ring-[var(--accent-blue)] outline-none"
+                />
+              </div>
+
+              {/* 클래스 추가 입력 */}
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  클래스 이름 추가
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    ref={newSetClassInputRef}
+                    type="text"
+                    value={newSetClassInput}
+                    onChange={(e) => setNewSetClassInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); handleNewSetAddClass(); }
+                    }}
+                    placeholder="클래스명 입력 후 Enter 또는 추가"
+                    className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-800 border border-white/10 text-sm text-white placeholder-slate-500 focus:border-[var(--accent-lime)] focus:ring-1 focus:ring-[var(--accent-lime)] outline-none"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={handleNewSetAddClass}
+                    disabled={!newSetClassInput.trim()}
+                    className="px-3.5 py-2 rounded-lg text-sm font-medium border border-[var(--accent-lime)]/50 disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_16px_rgba(168,230,27,0.25)]"
+                    style={{ backgroundColor: 'var(--accent-lime)', color: '#1A1A2E' }}
+                  >
+                    추가
+                  </button>
+                </div>
+              </div>
+
+              {/* 클래스 목록 */}
+              <div className="flex-1 min-h-0">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    클래스 목록
+                    <span className="ml-1.5 text-slate-500 font-normal normal-case">(ID는 순서대로 0, 1, 2…)</span>
+                  </label>
+                  {newSetClassNames.length > 0 && (
+                    <span className="text-xs tabular-nums text-slate-500">{newSetClassNames.length}개</span>
+                  )}
+                </div>
+                {newSetClassNames.length === 0 ? (
+                  <div className="glass rounded-xl p-6 text-center border border-white/5">
+                    <p className="text-sm text-slate-500">위에서 클래스 이름을 추가하세요</p>
+                  </div>
+                ) : (
+                  <ul className="space-y-1 max-h-48 overflow-auto pr-1">
+                    {newSetClassNames.map((name, idx) => (
+                      <li key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/60 border border-white/5 group">
+                        <span
+                          className="shrink-0 w-6 text-center text-[11px] font-mono tabular-nums text-slate-500 font-bold"
+                          title={`클래스 ID ${idx}`}
+                        >
+                          {idx}
+                        </span>
+                        <span
+                          className="w-3.5 h-3.5 shrink-0 rounded-full border border-white/20"
+                          style={{ backgroundColor: ([] as string[])[idx] ?? `hsl(${(idx * 47) % 360},70%,60%)` }}
+                        />
+                        <span className="flex-1 min-w-0 text-sm text-slate-200 truncate">{name}</span>
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => handleNewSetMoveClass(idx, 'up')}
+                            disabled={idx === 0}
+                            className="p-1 rounded text-slate-500 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed"
+                            title="위로"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleNewSetMoveClass(idx, 'down')}
+                            disabled={idx === newSetClassNames.length - 1}
+                            className="p-1 rounded text-slate-500 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed"
+                            title="아래로"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleNewSetRemoveClass(idx)}
+                            className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10"
+                            title="삭제"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* 파일 저장 옵션 */}
+              <label className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border transition-colors cursor-pointer ${newSetSaveFile ? 'border-[var(--accent-lime)]/40 bg-[var(--accent-lime)]/5' : 'border-white/10 bg-white/5'} ${!workFolderPath || !window.electron ? 'opacity-40 pointer-events-none' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={newSetSaveFile}
+                  onChange={(e) => setNewSetSaveFile(e.target.checked)}
+                  className="mt-0.5 rounded border-white/20 shrink-0"
+                  disabled={!workFolderPath || !window.electron}
+                />
+                <div className="min-w-0">
+                  <p className="text-sm text-slate-200 font-medium">작업 폴더에 .txt 파일로 저장</p>
+                  <p className="text-xs text-slate-500 mt-0.5 truncate">
+                    {workFolderPath
+                      ? `${workFolderPath}/${(newSetName.trim() || 'classes')}.txt`
+                      : '폴더를 먼저 열어야 합니다'}
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* 하단 버튼 */}
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-white/10 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowNewSetModal(false)}
+                className="px-4 py-2 rounded-xl glass border border-white/10 text-sm text-slate-300 hover:text-white transition-colors"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleNewSetSave()}
+                disabled={newSetClassNames.length === 0}
+                className="px-5 py-2 rounded-xl text-sm font-semibold border border-[var(--accent-lime)]/50 disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_20px_rgba(168,230,27,0.3)]"
+                style={{ backgroundColor: 'var(--accent-lime)', color: '#1A1A2E' }}
+              >
+                저장 ({newSetClassNames.length}개)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 폴더 통계 모달 */}
       {showStatsModal && (
